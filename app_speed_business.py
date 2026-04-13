@@ -117,20 +117,20 @@ with col2:
 # --------------------------------------------
 if st.button("🚀 Générer le planning"):
     with st.spinner("Optimisation du voisinage en cours..."):
-solution, doublons = solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)    
-    if solution:
-        score = max(0, 100 - (doublons * 5))
-        st.metric("Qualité du Mixage (0 doublon souhaité)", f"{score}%")
+        solution, doublons = solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)    
+            if solution:
+                score = max(0, 100 - (doublons * 5))
+                st.metric("Qualité du Mixage (0 doublon souhaité)", f"{score}%")
+                
+                if doublons == 0:
+                    st.success("🎯 Parfait : Personne ne se croise deux fois !")
+                else:
+                    st.warning(f"⚠️ {doublons} rencontre(s) répétée(s) inévitable(s).")
         
-        if doublons == 0:
-            st.success("🎯 Parfait : Personne ne se croise deux fois !")
-        else:
-            st.warning(f"⚠️ {doublons} rencontre(s) répétée(s) inévitable(s).")
-
-        df_total = pd.concat(solution)
-        st.download_button("📥 Télécharger CSV", df_total.to_csv(index=False).encode('utf-8-sig'), "planning.csv")
-        
-        tabs = st.tabs([f"Rotation {i+1}" for i in range(n_rounds)])
-        for i, tab in enumerate(tabs):
-            with tab:
-                st.table(solution[i].sort_values("Table"))
+                df_total = pd.concat(solution)
+                st.download_button("📥 Télécharger CSV", df_total.to_csv(index=False).encode('utf-8-sig'), "planning.csv")
+                
+                tabs = st.tabs([f"Rotation {i+1}" for i in range(n_rounds)])
+                for i, tab in enumerate(tabs):
+                    with tab:
+                        st.table(solution[i].sort_values("Table"))
