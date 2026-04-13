@@ -104,10 +104,20 @@ with st.sidebar:
     n_rounds = st.number_input("Rotations", 1, 10, 4)
     max_per_table = st.number_input("Max/Table", 2, 20, 8)
 
+# --- BLOC À RAJOUTER POUR LES CONTRAINTES ---
+col1, col2 = st.columns(2)
+with col1:
+    st.markdown("### 🚫 Exclusions (Strictes)")
+    excl_input = st.text_area("Ex: Coach1,Coach2 (Un groupe par ligne)", key="excl")
+    exclusion_groups = [line.split(',') for line in excl_input.split('\n') if ',' in line]
+with col2:
+    st.markdown("### 🔗 Obligations (Strictes)")
+    obl_input = st.text_area("Ex: Jean,Marie (Un binôme par ligne)", key="obl")
+    obligation_pairs = [line.split(',') for line in obl_input.split('\n') if ',' in line]
+# --------------------------------------------
 if st.button("🚀 Générer le planning"):
     with st.spinner("Optimisation du voisinage en cours..."):
-        solution, doublons = solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, [], [])
-    
+solution, doublons = solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)    
     if solution:
         score = max(0, 100 - (doublons * 5))
         st.metric("Qualité du Mixage (0 doublon souhaité)", f"{score}%")
