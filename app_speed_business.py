@@ -1,84 +1,145 @@
 import streamlit as st
-from ortools.sat.python import cp_model
 import pandas as pd
 import math
+import random
 
-# --- 1. FONCTION DE CALCUL ---
-def solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs):
-    model = cp_model.CpModel()
+# --- 1. ALGORITHME (Recuit Simulé) ---
+def solve_speed_business_optimized(participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs):
     n_p = len(participants)
     n_t = math.ceil(n_p / max_per_table)
-    
-    # x[r, t, p] : Le participant p est à la table t à la rotation r
-    x = {}
-    for r in range(n_rounds):
-        for t in range(n_t):
-            for p in range(n_p):
-                x[r, t, p] = model.NewBoolVar(f'x_r{r}_t{t}_p{p}')
 
-    # CONTRAINTES DE BASE (PRÉSENCE ET CAPACITÉ)
-    for r in range(n_rounds):
-        for p in range(n_p):
-            model.Add(sum(x[r, t, p] for t in range(n_t)) == 1)
-        for t in range(n_t):
-            model.Add(sum(x[r, t, p] for p in range(n_p)) <= max_per_table)
-            model.Add(sum(x[r, t, p] for p in range(n_p)) >= math.floor(n_p / n_t))  # CORRIGÉ
+    # Index des exclusions et obligations
+    excl_sets = [set(g) for g in exclusion_groups]
+    obl_pairs = [tuple(sorted([participants.index(a), participants.index(b)]))
+                 for a, b in obligation_pairs
+                 if a in participants and b in participants]
 
-    # EXCLUSIONS STRICTES
-    for r in range(n_rounds):
-        for t in range(n_t):
-            for group in exclusion_groups:
-                indices = [i for i, name in enumerate(participants) if name in group]
-                if len(indices) > 1:
-                    model.Add(sum(x[r, t, i] for i in indices) <= 1)
-
-    # UNICITÉ ET OBLIGATIONS (OPTIMISATION)
-    penalties = []
-    for p1 in range(n_p):
-        for p2 in range(p1 + 1, n_p):
-            p1_n, p2_n = participants[p1], participants[p2]
-            meetings = []
-            for r in range(n_rounds):
-                together_r = model.NewBoolVar(f'm_{p1}_{p2}_{r}')
-                t_list = []
-                for t in range(n_t):
-                    pair_t = model.NewBoolVar(f'p_{p1}_{p2}_{r}_{t}')
-                    model.Add(x[r, t, p1] + x[r, t, p2] == 2).OnlyEnforceIf(pair_t)
-                    model.Add(x[r, t, p1] + x[r, t, p2] < 2).OnlyEnforceIf(pair_t.Not())
-                    t_list.append(pair_t)
-                model.Add(together_r == sum(t_list))
-                meetings.append(together_r)
-
-            if any({p1_n, p2_n}.issubset(set(pair)) for pair in obligation_pairs):
-                model.Add(sum(meetings) >= 1)
-
-            dup = model.NewIntVar(0, n_rounds, f'd_{p1}_{p2}')
-            model.Add(dup >= sum(meetings) - 1)
-            penalties.append(dup * 10000)
-
-    # ANTI-STAGNATION
-    for r in range(n_rounds - 1):
-        for p in range(n_p):
-            for t in range(n_t):
-                model.Add(x[r, t, p] + x[r+1, t, p] <= 1)
-
-    model.Minimize(sum(penalties))
-    solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 300.0
-    status = solver.Solve(model)
-
-    if status in [cp_model.FEASIBLE, cp_model.OPTIMAL]:
-        res = []
-        doublons = int(solver.ObjectiveValue() / 10000)
+    def make_random_plan():
+        plan = []
         for r in range(n_rounds):
-            round_data = []
+            perm = list(range(n_p))
+            random.shuffle(perm)
+            assignment = {}
+            for i, p in enumerate(perm):
+                assignment[p] = i % n_t
+            plan.append(assignment)
+        return plan
+
+    def check_exclusions(plan):
+        for r in range(n_rounds):
+            for s in excl_sets:
+                indices = [i for i, name in enumerate(participants) if name in s]
+                tables_used = [plan[r][i] for i in indices]
+                if len(tables_used) != len(set(tables_used)):
+                    return False
+        return True
+
+    def count_doublons(plan):
+        from collections import defaultdict
+        meetings = defaultdict(int)
+        for r in range(n_rounds):
+            table_members = [[] for _ in range(n_t)]
+            for p, t in plan[r].items():
+                table_members[t].append(p)
+            for members in table_members:
+                for i in range(len(members)):
+                    for j in range(i+1, len(members)):
+                        pair = tuple(sorted([members[i], members[j]]))
+                        meetings[pair] += 1
+        doublons = sum(max(0, v - 1) for v in meetings.values())
+        return doublons, meetings
+
+    def check_obligations(meetings):
+        for p1, p2 in obl_pairs:
+            pair = tuple(sorted([p1, p2]))
+            if meetings.get(pair, 0) == 0:
+                return False
+        return True
+
+    def check_stagnation(plan):
+        for r in range(n_rounds - 1):
             for p in range(n_p):
-                for t in range(n_t):
-                    if solver.Value(x[r, t, p]) == 1:
-                        round_data.append({"Participant": participants[p], "Table": t + 1, "Rotation": r + 1})
-            res.append(pd.DataFrame(round_data))
-        return res, doublons
-    return None, 0
+                if plan[r][p] == plan[r+1][p]:
+                    return False
+        return True
+
+    def score(plan):
+        d, meetings = count_doublons(plan)
+        penalty = d * 1000
+        if not check_obligations(meetings):
+            penalty += 5000
+        if not check_stagnation(plan):
+            penalty += 500
+        return penalty, d, meetings
+
+    # Recherche locale
+    best_plan = None
+    best_score = float('inf')
+    best_doublons = float('inf')
+
+    for attempt in range(10):  # 10 tentatives depuis des points de départ différents
+        # Génère un plan valide (respecte les exclusions)
+        for _ in range(1000):
+            plan = make_random_plan()
+            if check_exclusions(plan):
+                break
+        else:
+            continue
+
+        current_score, _, _ = score(plan)
+
+        # Recuit simulé
+        for iteration in range(80000):
+            # Choisit une rotation et échange deux participants de tables différentes
+            r = random.randint(0, n_rounds - 1)
+            p1, p2 = random.sample(range(n_p), 2)
+            if plan[r][p1] == plan[r][p2]:
+                continue
+
+            # Applique l'échange
+            plan[r][p1], plan[r][p2] = plan[r][p2], plan[r][p1]
+
+            # Vérifie les exclusions
+            if not check_exclusions(plan):
+                plan[r][p1], plan[r][p2] = plan[r][p2], plan[r][p1]
+                continue
+
+            new_score, new_d, _ = score(plan)
+
+            # Accepte si meilleur
+            if new_score < current_score:
+                current_score = new_score
+            else:
+                plan[r][p1], plan[r][p2] = plan[r][p2], plan[r][p1]
+
+            if current_score == 0:
+                break
+
+        s, d, meetings = score(plan)
+        if s < best_score:
+            best_score = s
+            best_doublons = d
+            best_plan = [dict(p) for p in plan]
+
+        if best_score == 0:
+            break
+
+    if best_plan is None:
+        return None, 0
+
+    # Construit le résultat
+    res = []
+    for r in range(n_rounds):
+        round_data = []
+        for p in range(n_p):
+            round_data.append({
+                "Participant": participants[p],
+                "Table": best_plan[r][p] + 1,
+                "Rotation": r + 1
+            })
+        res.append(pd.DataFrame(round_data))
+
+    return res, best_doublons
 
 # --- 2. INTERFACE UTILISATEUR ---
 st.set_page_config(page_title="Ensenat Master Optimizer", layout="wide")
@@ -98,14 +159,13 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown("### 🚫 Exclusions (Strictes)")
     excl_input = st.text_area("Ex: Coach1,Coach2 (Un groupe par ligne)", key="excl")
-    exclusion_groups = [[n.strip() for n in line.split(',')] for line in excl_input.split('\n') if ',' in line]  # CORRIGÉ
+    exclusion_groups = [[n.strip() for n in line.split(',')] for line in excl_input.split('\n') if ',' in line]
 with col2:
     st.markdown("### 🔗 Obligations (Strictes)")
     obl_input = st.text_area("Ex: Jean,Marie (Un binôme par ligne)", key="obl")
-    obligation_pairs = [[n.strip() for n in line.split(',')] for line in obl_input.split('\n') if ',' in line]  # CORRIGÉ
+    obligation_pairs = [[n.strip() for n in line.split(',')] for line in obl_input.split('\n') if ',' in line]
 
 if st.button("🚀 Générer la solution"):
-    # VALIDATION
     errors = []
     all_names = set(participants)
     if n_p < 2:
@@ -123,12 +183,12 @@ if st.button("🚀 Générer la solution"):
         for e in errors:
             st.error(e)
     else:
-        with st.spinner("Optimisation en cours (max 300s)..."):
-            solution, doublons = solve_speed_business_ensenat_final(
+        with st.spinner("Optimisation en cours..."):
+            solution, doublons = solve_speed_business_optimized(
                 participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)
 
         if solution:
-            score = max(0, min(100, 100 - (doublons * 2)))  # CORRIGÉ
+            score = max(0, min(100, 100 - (doublons * 2)))
             st.metric("Score de Mixage", f"{score}%")
             if doublons > 0:
                 st.warning(f"⚠️ {doublons} doublon(s) détecté(s). Essayez d'augmenter le nombre de rotations.")
