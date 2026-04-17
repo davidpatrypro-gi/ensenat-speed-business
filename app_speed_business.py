@@ -123,7 +123,7 @@ if st.button("🚀 Générer la solution"):
         for e in errors:
             st.error(e)
     else:
-        with st.spinner("Optimisation en cours (max 30s)..."):
+        with st.spinner("Optimisation en cours (max 300s)..."):
             solution, doublons = solve_speed_business_ensenat_final(
                 participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)
 
