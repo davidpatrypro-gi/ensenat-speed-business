@@ -101,7 +101,7 @@ def solve_speed_business_optimized(participants, max_per_table, n_rounds, exclus
         # Cherche un plan de départ valide (hard constraints respectées)
         plan = None
         for _ in range(3000):
-            candidate = make_random_plan()
+            candidate = make_valid_plan()
             if check_all_hard(candidate):
                 plan = candidate
                 break
