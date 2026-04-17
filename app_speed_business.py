@@ -3,7 +3,7 @@ from ortools.sat.python import cp_model
 import pandas as pd
 import math
 
-# --- 1. FONCTION DE CALCUL (VERSION MASTER SÉCURISÉE) ---
+# --- 1. FONCTION DE CALCUL ---
 def solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs):
     model = cp_model.CpModel()
     n_p = len(participants)
@@ -22,9 +22,9 @@ def solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, ex
             model.Add(sum(x[r, t, p] for t in range(n_t)) == 1)
         for t in range(n_t):
             model.Add(sum(x[r, t, p] for p in range(n_p)) <= max_per_table)
-            model.Add(sum(x[r, t, p] for p in range(n_p)) >= (n_p // n_t))
+            model.Add(sum(x[r, t, p] for p in range(n_p)) >= math.floor(n_p / n_t))  # CORRIGÉ
 
-    # EXCLUSIONS STRICTES (A != B)
+    # EXCLUSIONS STRICTES
     for r in range(n_rounds):
         for t in range(n_t):
             for group in exclusion_groups:
@@ -64,7 +64,7 @@ def solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, ex
 
     model.Minimize(sum(penalties))
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30.0 
+    solver.parameters.max_time_in_seconds = 30.0
     status = solver.Solve(model)
 
     if status in [cp_model.FEASIBLE, cp_model.OPTIMAL]:
@@ -98,27 +98,55 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown("### 🚫 Exclusions (Strictes)")
     excl_input = st.text_area("Ex: Coach1,Coach2 (Un groupe par ligne)", key="excl")
-    exclusion_groups = [line.split(',') for line in excl_input.split('\n') if ',' in line]
+    exclusion_groups = [[n.strip() for n in line.split(',')] for line in excl_input.split('\n') if ',' in line]  # CORRIGÉ
 with col2:
     st.markdown("### 🔗 Obligations (Strictes)")
     obl_input = st.text_area("Ex: Jean,Marie (Un binôme par ligne)", key="obl")
-    obligation_pairs = [line.split(',') for line in obl_input.split('\n') if ',' in line]
+    obligation_pairs = [[n.strip() for n in line.split(',')] for line in obl_input.split('\n') if ',' in line]  # CORRIGÉ
 
 if st.button("🚀 Générer la solution"):
-    with st.spinner("Optimisation en cours..."):
-        solution, doublons = solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)
-        
-    if solution:
-        score = max(0, 100 - (doublons * 2))
-        st.metric("Score de Mixage", f"{score}%")
-        
-        df_total = pd.concat(solution)
-        csv = df_total.to_csv(index=False).encode('utf-8-sig')
-        st.download_button("📥 Télécharger CSV", csv, "planning.csv", "text/csv")
-        
-        tabs = st.tabs([f"Rotation {i+1}" for i in range(n_rounds)])
-        for i, tab in enumerate(tabs):
-            with tab:
-                st.table(solution[i].sort_values("Table"))
+    # VALIDATION
+    errors = []
+    all_names = set(participants)
+    if n_p < 2:
+        errors.append("Il faut au moins 2 participants.")
+    for group in exclusion_groups:
+        for name in group:
+            if name and name not in all_names:
+                errors.append(f"'{name}' (exclusion) introuvable dans la liste de participants.")
+    for pair in obligation_pairs:
+        for name in pair:
+            if name and name not in all_names:
+                errors.append(f"'{name}' (obligation) introuvable dans la liste de participants.")
+
+    if errors:
+        for e in errors:
+            st.error(e)
     else:
-        st.error("❌ Impossible de trouver une solution avec ces exclusions strictes.")
+        with st.spinner("Optimisation en cours (max 30s)..."):
+            solution, doublons = solve_speed_business_ensenat_final(
+                participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)
+
+        if solution:
+            score = max(0, min(100, 100 - (doublons * 2)))  # CORRIGÉ
+            st.metric("Score de Mixage", f"{score}%")
+            if doublons > 0:
+                st.warning(f"⚠️ {doublons} doublon(s) détecté(s). Essayez d'augmenter le nombre de rotations.")
+            else:
+                st.success("✅ Solution optimale — aucun doublon !")
+
+            df_total = pd.concat(solution)
+            csv = df_total.to_csv(index=False).encode('utf-8-sig')
+            st.download_button("📥 Télécharger CSV", csv, "planning.csv", "text/csv")
+
+            tabs = st.tabs([f"Rotation {i+1}" for i in range(n_rounds)])
+            for i, tab in enumerate(tabs):
+                with tab:
+                    df_round = solution[i].sort_values("Table")
+                    st.table(df_round)
+                    st.markdown("**Vue par table :**")
+                    for table_num in sorted(df_round["Table"].unique()):
+                        membres = df_round[df_round["Table"] == table_num]["Participant"].tolist()
+                        st.write(f"🪑 Table {table_num} : {' • '.join(membres)}")
+        else:
+            st.error("❌ Impossible de trouver une solution avec ces contraintes.")
