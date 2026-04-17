@@ -64,7 +64,7 @@ def solve_speed_business_ensenat_final(participants, max_per_table, n_rounds, ex
 
     model.Minimize(sum(penalties))
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 30.0
+    solver.parameters.max_time_in_seconds = 300.0
     status = solver.Solve(model)
 
     if status in [cp_model.FEASIBLE, cp_model.OPTIMAL]:
