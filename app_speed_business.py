@@ -312,42 +312,42 @@ if not problems:
                 st.metric("Score de mixage", f"{score}%")
 
             # Vérifie quelles obligations ont été respectées
-    df_total_check = pd.concat(solution)
-    obl_non_respectees = []
-    for pair in obligation_pairs:
-        if len(pair) < 2: continue
-        a, b = pair[0].strip(), pair[1].strip()
-        met = False
-        for r in range(1, n_rounds + 1):
-            df_r = df_total_check[df_total_check["Rotation"] == r]
-            if len(df_r[df_r["Participant"] == a]) == 0: continue
-            if len(df_r[df_r["Participant"] == b]) == 0: continue
-            ta = df_r[df_r["Participant"] == a]["Table"].values[0]
-            tb = df_r[df_r["Participant"] == b]["Table"].values[0]
-            if ta == tb:
-                met = True
-                break
-        if not met:
-            obl_non_respectees.append(f"{a} & {b}")
-    
-    if doublons == 0:
-        st.success("✅ Solution optimale — aucun doublon !")
-    else:
-        zero_possible = table_size <= n_t
-        st.warning(
-            f"⚠️ {doublons} doublon(s). "
-            f"{'Inévitables pour ce scénario.' if not zero_possible else 'Essayez de relancer.'}"
-        )
-    
-    if obl_non_respectees:
-        st.warning(
-            f"⚠️ Obligation(s) non respectée(s) faute de place : "
-            f"{', '.join(obl_non_respectees)}. "
-            f"L'algo a privilégié 0 doublon. "
-            f"Relancez pour tenter une autre combinaison."
-        )
-    elif obligation_pairs:
-        st.success("✅ Toutes les obligations sont respectées.")
+        df_total_check = pd.concat(solution)
+        obl_non_respectees = []
+        for pair in obligation_pairs:
+            if len(pair) < 2: continue
+            a, b = pair[0].strip(), pair[1].strip()
+            met = False
+            for r in range(1, n_rounds + 1):
+                df_r = df_total_check[df_total_check["Rotation"] == r]
+                if len(df_r[df_r["Participant"] == a]) == 0: continue
+                if len(df_r[df_r["Participant"] == b]) == 0: continue
+                ta = df_r[df_r["Participant"] == a]["Table"].values[0]
+                tb = df_r[df_r["Participant"] == b]["Table"].values[0]
+                if ta == tb:
+                    met = True
+                    break
+            if not met:
+                obl_non_respectees.append(f"{a} & {b}")
+        
+        if doublons == 0:
+            st.success("✅ Solution optimale — aucun doublon !")
+        else:
+            zero_possible = table_size <= n_t
+            st.warning(
+                f"⚠️ {doublons} doublon(s). "
+                f"{'Inévitables pour ce scénario.' if not zero_possible else 'Essayez de relancer.'}"
+            )
+        
+        if obl_non_respectees:
+            st.warning(
+                f"⚠️ Obligation(s) non respectée(s) faute de place : "
+                f"{', '.join(obl_non_respectees)}. "
+                f"L'algo a privilégié 0 doublon. "
+                f"Relancez pour tenter une autre combinaison."
+            )
+        elif obligation_pairs:
+            st.success("✅ Toutes les obligations sont respectées.")
 
             df_total = pd.concat(solution)
             csv = df_total.to_csv(index=False).encode('utf-8-sig')
