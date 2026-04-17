@@ -2,124 +2,200 @@ import streamlit as st
 import pandas as pd
 import math
 import random
+from collections import defaultdict
 
-# --- 1. ALGORITHME (Recuit Simulé) ---
 def solve_speed_business_optimized(participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs):
     n_p = len(participants)
     n_t = math.ceil(n_p / max_per_table)
 
-    # Index des exclusions et obligations
-    excl_sets = [set(g) for g in exclusion_groups]
-    obl_pairs = [tuple(sorted([participants.index(a), participants.index(b)]))
-                 for a, b in obligation_pairs
-                 if a in participants and b in participants]
+    # Préparation des exclusions par index
+    excl_sets = []
+    for group in exclusion_groups:
+        idx = frozenset(i for i, name in enumerate(participants) if name in group)
+        if len(idx) >= 2:
+            excl_sets.append(idx)
+
+    excl_for = defaultdict(list)
+    for s in excl_sets:
+        for p in s:
+            excl_for[p].append(s)
+
+    # Préparation des obligations par index
+    obl_pairs_idx = []
+    for pair in obligation_pairs:
+        if len(pair) >= 2:
+            a, b = pair[0].strip(), pair[1].strip()
+            if a in participants and b in participants:
+                obl_pairs_idx.append((participants.index(a), participants.index(b)))
 
     def make_random_plan():
         plan = []
         for r in range(n_rounds):
-            perm = list(range(n_p))
-            random.shuffle(perm)
-            assignment = {}
-            for i, p in enumerate(perm):
-                assignment[p] = i % n_t
+            shuffled = list(range(n_p))
+            random.shuffle(shuffled)
+            assignment = [0] * n_p
+            for idx, p in enumerate(shuffled):
+                assignment[p] = idx % n_t
             plan.append(assignment)
         return plan
 
-    def check_exclusions(plan):
+    def check_all_hard(plan):
         for r in range(n_rounds):
             for s in excl_sets:
-                indices = [i for i, name in enumerate(participants) if name in s]
-                tables_used = [plan[r][i] for i in indices]
-                if len(tables_used) != len(set(tables_used)):
+                tables = [plan[r][p] for p in s]
+                if len(tables) != len(set(tables)):
                     return False
-        return True
-
-    def count_doublons(plan):
-        from collections import defaultdict
-        meetings = defaultdict(int)
-        for r in range(n_rounds):
-            table_members = [[] for _ in range(n_t)]
-            for p, t in plan[r].items():
-                table_members[t].append(p)
-            for members in table_members:
-                for i in range(len(members)):
-                    for j in range(i+1, len(members)):
-                        pair = tuple(sorted([members[i], members[j]]))
-                        meetings[pair] += 1
-        doublons = sum(max(0, v - 1) for v in meetings.values())
-        return doublons, meetings
-
-    def check_obligations(meetings):
-        for p1, p2 in obl_pairs:
-            pair = tuple(sorted([p1, p2]))
-            if meetings.get(pair, 0) == 0:
-                return False
-        return True
-
-    def check_stagnation(plan):
         for r in range(n_rounds - 1):
             for p in range(n_p):
-                if plan[r][p] == plan[r+1][p]:
+                if plan[r][p] == plan[r + 1][p]:
                     return False
         return True
 
-    def score(plan):
-        d, meetings = count_doublons(plan)
-        penalty = d * 1000
-        if not check_obligations(meetings):
-            penalty += 5000
-        if not check_stagnation(plan):
-            penalty += 500
-        return penalty, d, meetings
+    def check_exclusion_at(plan, r, p, new_table):
+        for s in excl_for[p]:
+            for other in s:
+                if other != p and plan[r][other] == new_table:
+                    return False
+        return True
 
-    # Recherche locale
-    best_plan = None
-    best_score = float('inf')
-    best_doublons = float('inf')
+    def check_stagnation_at(plan, r, p, new_table):
+        if r > 0 and plan[r - 1][p] == new_table:
+            return False
+        if r < n_rounds - 1 and plan[r + 1][p] == new_table:
+            return False
+        return True
 
-    for attempt in range(10):  # 10 tentatives depuis des points de départ différents
-        # Génère un plan valide (respecte les exclusions)
-        for _ in range(1000):
-            plan = make_random_plan()
-            if check_exclusions(plan):
+    def build_meetings(plan):
+        meetings = [[0] * n_p for _ in range(n_p)]
+        for r in range(n_rounds):
+            by_table = defaultdict(list)
+            for p in range(n_p):
+                by_table[plan[r][p]].append(p)
+            for members in by_table.values():
+                for i in range(len(members)):
+                    for j in range(i + 1, len(members)):
+                        meetings[members[i]][members[j]] += 1
+                        meetings[members[j]][members[i]] += 1
+        return meetings
+
+    def count_doublons(meetings):
+        return sum(
+            meetings[p1][p2] - 1
+            for p1 in range(n_p)
+            for p2 in range(p1 + 1, n_p)
+            if meetings[p1][p2] > 1
+        )
+
+    def obligations_ok(meetings):
+        return all(meetings[p1][p2] > 0 for p1, p2 in obl_pairs_idx)
+
+    def full_score(doublons, meetings):
+        return doublons * 1000 + (0 if obligations_ok(meetings) else 5000)
+
+    best_plan, best_score, best_doublons = None, float('inf'), float('inf')
+
+    for attempt in range(20):
+        # Cherche un plan de départ valide (hard constraints respectées)
+        plan = None
+        for _ in range(3000):
+            candidate = make_random_plan()
+            if check_all_hard(candidate):
+                plan = candidate
                 break
-        else:
+        if plan is None:
             continue
 
-        current_score, _, _ = score(plan)
+        meetings = build_meetings(plan)
+        doublons = count_doublons(meetings)
+        cur_score = full_score(doublons, meetings)
+        no_improve = 0
 
-        # Recuit simulé
-        for iteration in range(80000):
-            # Choisit une rotation et échange deux participants de tables différentes
+        for _ in range(200000):
             r = random.randint(0, n_rounds - 1)
             p1, p2 = random.sample(range(n_p), 2)
-            if plan[r][p1] == plan[r][p2]:
+            t1, t2 = plan[r][p1], plan[r][p2]
+            if t1 == t2:
                 continue
 
             # Applique l'échange
-            plan[r][p1], plan[r][p2] = plan[r][p2], plan[r][p1]
+            plan[r][p1] = t2
+            plan[r][p2] = t1
 
-            # Vérifie les exclusions
-            if not check_exclusions(plan):
-                plan[r][p1], plan[r][p2] = plan[r][p2], plan[r][p1]
+            # Vérifie les contraintes dures (exclusions + anti-stagnation)
+            hard_ok = (
+                check_exclusion_at(plan, r, p1, t2) and
+                check_exclusion_at(plan, r, p2, t1) and
+                check_stagnation_at(plan, r, p1, t2) and
+                check_stagnation_at(plan, r, p2, t1)
+            )
+            if not hard_ok:
+                plan[r][p1] = t1
+                plan[r][p2] = t2
                 continue
 
-            new_score, new_d, _ = score(plan)
+            # Mise à jour incrémentale des meetings (O(n) au lieu de O(n²))
+            at_t1 = [p for p in range(n_p) if p not in (p1, p2) and plan[r][p] == t1]
+            at_t2 = [p for p in range(n_p) if p not in (p1, p2) and plan[r][p] == t2]
 
-            # Accepte si meilleur
-            if new_score < current_score:
-                current_score = new_score
+            delta_d = 0
+            for p3 in at_t1:
+                if meetings[p1][p3] > 1: delta_d -= 1
+                if meetings[p1][p3] - 1 > 1: delta_d += 1  # après -1
+                if meetings[p2][p3] + 1 > 1: delta_d += 1  # après +1
+                if meetings[p2][p3] > 1: delta_d -= 1
+            for p3 in at_t2:
+                if meetings[p1][p3] + 1 > 1: delta_d += 1
+                if meetings[p1][p3] > 1: delta_d -= 1
+                if meetings[p2][p3] > 1: delta_d -= 1
+                if meetings[p2][p3] - 1 > 1: delta_d += 1
+
+            for p3 in at_t1:
+                meetings[p1][p3] -= 1; meetings[p3][p1] -= 1
+                meetings[p2][p3] += 1; meetings[p3][p2] += 1
+            for p3 in at_t2:
+                meetings[p1][p3] += 1; meetings[p3][p1] += 1
+                meetings[p2][p3] -= 1; meetings[p3][p2] -= 1
+
+            new_doublons = doublons + delta_d
+            new_score = full_score(new_doublons, meetings)
+
+            if new_score <= cur_score:
+                doublons = new_doublons
+                cur_score = new_score
+                no_improve = 0
             else:
-                plan[r][p1], plan[r][p2] = plan[r][p2], plan[r][p1]
+                # Annule l'échange
+                plan[r][p1] = t1; plan[r][p2] = t2
+                for p3 in at_t1:
+                    meetings[p1][p3] += 1; meetings[p3][p1] += 1
+                    meetings[p2][p3] -= 1; meetings[p3][p2] -= 1
+                for p3 in at_t2:
+                    meetings[p1][p3] -= 1; meetings[p3][p1] -= 1
+                    meetings[p2][p3] += 1; meetings[p3][p2] += 1
+                no_improve += 1
 
-            if current_score == 0:
+            if cur_score == 0:
                 break
 
-        s, d, meetings = score(plan)
-        if s < best_score:
-            best_score = s
-            best_doublons = d
-            best_plan = [dict(p) for p in plan]
+            # Secousse aléatoire si bloqué
+            if no_improve > 10000:
+                for _ in range(500):
+                    ra = random.randint(0, n_rounds - 1)
+                    pa, pb = random.sample(range(n_p), 2)
+                    ta, tb = plan[ra][pa], plan[ra][pb]
+                    if ta == tb: continue
+                    plan[ra][pa] = tb; plan[ra][pb] = ta
+                    if check_all_hard(plan): break
+                    plan[ra][pa] = ta; plan[ra][pb] = tb
+                meetings = build_meetings(plan)
+                doublons = count_doublons(meetings)
+                cur_score = full_score(doublons, meetings)
+                no_improve = 0
+
+        if cur_score < best_score:
+            best_score = cur_score
+            best_doublons = doublons
+            best_plan = [list(r) for r in plan]
 
         if best_score == 0:
             break
@@ -127,21 +203,15 @@ def solve_speed_business_optimized(participants, max_per_table, n_rounds, exclus
     if best_plan is None:
         return None, 0
 
-    # Construit le résultat
     res = []
     for r in range(n_rounds):
-        round_data = []
-        for p in range(n_p):
-            round_data.append({
-                "Participant": participants[p],
-                "Table": best_plan[r][p] + 1,
-                "Rotation": r + 1
-            })
+        round_data = [{"Participant": participants[p], "Table": best_plan[r][p] + 1, "Rotation": r + 1}
+                      for p in range(n_p)]
         res.append(pd.DataFrame(round_data))
-
     return res, best_doublons
 
-# --- 2. INTERFACE UTILISATEUR ---
+
+# --- INTERFACE ---
 st.set_page_config(page_title="Ensenat Master Optimizer", layout="wide")
 st.title("🛡️ Speed Business Optimizer - Version Master")
 
@@ -173,11 +243,11 @@ if st.button("🚀 Générer la solution"):
     for group in exclusion_groups:
         for name in group:
             if name and name not in all_names:
-                errors.append(f"'{name}' (exclusion) introuvable dans la liste de participants.")
+                errors.append(f"'{name}' (exclusion) introuvable dans la liste.")
     for pair in obligation_pairs:
         for name in pair:
             if name and name not in all_names:
-                errors.append(f"'{name}' (obligation) introuvable dans la liste de participants.")
+                errors.append(f"'{name}' (obligation) introuvable dans la liste.")
 
     if errors:
         for e in errors:
@@ -199,7 +269,7 @@ if st.button("🚀 Générer la solution"):
             csv = df_total.to_csv(index=False).encode('utf-8-sig')
             st.download_button("📥 Télécharger CSV", csv, "planning.csv", "text/csv")
 
-            tabs = st.tabs([f"Rotation {i+1}" for i in range(n_rounds)])
+            tabs = st.tabs([f"Rotation {i + 1}" for i in range(n_rounds)])
             for i, tab in enumerate(tabs):
                 with tab:
                     df_round = solution[i].sort_values("Table")
