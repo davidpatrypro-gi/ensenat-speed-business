@@ -29,19 +29,18 @@ def solve_speed_business_optimized(participants, max_per_table, n_rounds, exclus
                 obl_pairs_idx.append((participants.index(a), participants.index(b)))
 
     def make_valid_plan():
-    """Plan anti-stagnation garanti par construction (round-robin)"""
-    shuffled = list(range(n_p))
-    random.shuffle(shuffled)
-    groups = [shuffled[i::n_t] for i in range(n_t)]
-    plan = []
-    for r in range(n_rounds):
-        assignment = [0] * n_p
-        for g_idx, group in enumerate(groups):
-            table = (g_idx + r) % n_t
-            for p in group:
-                assignment[p] = table
-        plan.append(assignment)
-    return plan
+        shuffled = list(range(n_p))
+        random.shuffle(shuffled)
+        groups = [shuffled[i::n_t] for i in range(n_t)]
+        plan = []
+        for r in range(n_rounds):
+            assignment = [0] * n_p
+            for g_idx, group in enumerate(groups):
+                table = (g_idx + r) % n_t
+                for p in group:
+                    assignment[p] = table
+            plan.append(assignment)
+        return plan
 
     def check_all_hard(plan):
         for r in range(n_rounds):
