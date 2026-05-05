@@ -84,51 +84,82 @@ def generate_lookup_html(solution, participants, n_rounds, event_name="Speed Bus
   <label class="search-label" for="searchInput">Recherchez votre nom</label>
   <div class="search-box">
     <span class="search-icon">&#128269;</span>
-    <input type="text" id="searchInput" placeholder="Ex : Marie Dupont&hellip;"
-           autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false">
+    <input type="text" id="searchInput" placeholder="Ex : Marie ou Dupont&hellip;"
+           autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false"
+           oninput="renderList(this.value)">
   </div>
 </div>
 <div class="results" id="resultsList"></div>
 <div class="detail" id="detail"></div>
 <footer class="footer">Speed Business Optimizer</footer>
 <script>
-const DATA={data_json};
-const ROUNDS={rounds_json};
-const names=Object.keys(DATA);
-const input=document.getElementById('searchInput');
-const resList=document.getElementById('resultsList');
-const detail=document.getElementById('detail');
-function renderList(query){{
-  detail.classList.remove('visible');
-  const q=query.trim().toLowerCase();
-  if(!q){{resList.innerHTML='<p class="hint">Tapez les premi&egrave;res lettres de votre nom ou pr&eacute;nom</p>';return;}}
-  const matched=names.filter(n=>n.toLowerCase().includes(q));
-  if(!matched.length){{resList.innerHTML='<p class="no-result">Aucun participant trouv&eacute;</p>';return;}}
-  if(matched.length===1){{showDetail(matched[0]);return;}}
-  resList.innerHTML=matched.map(name=>'<div class="result-item" onclick="showDetail(\''+name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">'+'<span class="result-name">'+name+'</span><span class="result-arrow">&rsaquo;</span></div>').join('');
+var DATA={data_json};
+var ROUNDS={rounds_json};
+var names=Object.keys(DATA);
+var searchInput=document.getElementById('searchInput');
+var resList=document.getElementById('resultsList');
+var detail=document.getElementById('detail');
+
+function matchScore(name, query) {{
+  var nameLow=name.toLowerCase();
+  var words=query.toLowerCase().trim().split(/\s+/).filter(function(w){{return w.length>0;}});
+  if(!words.length) return 0;
+  var hits=words.filter(function(w){{return nameLow.indexOf(w)>=0;}});
+  return hits.length/words.length;
 }}
-function showDetail(name){{
+
+function renderList(query) {{
+  detail.classList.remove('visible');
+  var q=query.trim();
+  if(!q) {{
+    resList.innerHTML='<p class="hint">Tapez votre pr&eacute;nom ou votre nom</p>';
+    return;
+  }}
+  var scored=[];
+  for(var i=0;i<names.length;i++) {{
+    var s=matchScore(names[i],q);
+    if(s>0) scored.push({{name:names[i],score:s}});
+  }}
+  scored.sort(function(a,b){{return b.score-a.score;}});
+  if(!scored.length) {{
+    resList.innerHTML='<p class="no-result">Aucun participant trouv&eacute; — v&eacute;rifiez l'orthographe</p>';
+    return;
+  }}
+  if(scored.length===1) {{ showDetail(scored[0].name); return; }}
+  var html='';
+  for(var j=0;j<scored.length;j++) {{
+    var n=scored[j].name;
+    html+='<div class="result-item" onclick="showDetail(this.getAttribute('data-name'))" data-name="'+n.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'"><span class="result-name">'+n+'</span><span class="result-arrow">&rsaquo;</span></div>';
+  }}
+  resList.innerHTML=html;
+}}
+
+function showDetail(name) {{
   resList.innerHTML='';
-  const tables=DATA[name];
-  const cards=ROUNDS.map((r,i)=>'<div class="rotation-card"><div class="card-left"><span class="card-rotation-label">Rotation</span><span class="card-rotation-num">'+r+'</span></div><div class="card-table"><span class="card-table-label">Table</span><span class="card-table-num">'+tables[i]+'</span></div></div>').join('');
+  var tables=DATA[name];
+  if(!tables) {{ resList.innerHTML='<p class="no-result">Participant introuvable</p>'; return; }}
+  var cards='';
+  for(var i=0;i<ROUNDS.length;i++) {{
+    cards+='<div class="rotation-card"><div class="card-left"><span class="card-rotation-label">Rotation</span><span class="card-rotation-num">'+ROUNDS[i]+'</span></div><div class="card-table"><span class="card-table-label">Table</span><span class="card-table-num">'+tables[i]+'</span></div></div>';
+  }}
   detail.innerHTML='<div class="detail-header"><button class="back-btn" onclick="backToSearch()">&larr;</button><h2 class="detail-name">'+name+'</h2></div><div class="rotation-cards">'+cards+'</div>';
   detail.classList.add('visible');
-  detail.scrollIntoView({{behavior:'smooth',block:'start'}});
+  window.scrollTo({{top:0,behavior:'smooth'}});
 }}
-function backToSearch(){{
+
+function backToSearch() {{
   detail.classList.remove('visible');
-  resList.innerHTML='';
-  input.value='';
-  input.focus();
+  resList.innerHTML='<p class="hint">Tapez votre pr&eacute;nom ou votre nom</p>';
+  searchInput.value='';
+  searchInput.focus();
 }}
-input.addEventListener('input', () => renderList(input.value));
-input.addEventListener('keyup', (e) => {{
-  if (e.key === 'Enter') {{
-    const matched = names.filter(n => n.toLowerCase().includes(input.value.trim().toLowerCase()));
-    if (matched.length === 1) showDetail(matched[0]);
-  }}
+
+searchInput.addEventListener('input', function(){{ renderList(searchInput.value); }});
+searchInput.addEventListener('keyup', function(e) {{
+  if(e.key==='Enter') renderList(searchInput.value);
 }});
-resList.innerHTML='<p class="hint">Tapez les premi&egrave;res lettres de votre nom ou pr&eacute;nom</p>';
+
+resList.innerHTML='<p class="hint">Tapez votre pr&eacute;nom ou votre nom</p>';
 </script>
 </body>
 </html>"""
