@@ -84,7 +84,7 @@ def generate_lookup_html(solution, participants, n_rounds, event_name="Speed Bus
   <label class="search-label" for="searchInput">Recherchez votre nom</label>
   <div class="search-box">
     <span class="search-icon">&#128269;</span>
-    <input type="search" id="searchInput" placeholder="Ex : Marie Dupont&hellip;"
+    <input type="text" id="searchInput" placeholder="Ex : Marie Dupont&hellip;"
            autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false">
   </div>
 </div>
@@ -121,7 +121,13 @@ function backToSearch(){{
   input.value='';
   input.focus();
 }}
-input.addEventListener('input',()=>renderList(input.value));
+input.addEventListener('input', () => renderList(input.value));
+input.addEventListener('keyup', (e) => {{
+  if (e.key === 'Enter') {{
+    const matched = names.filter(n => n.toLowerCase().includes(input.value.trim().toLowerCase()));
+    if (matched.length === 1) showDetail(matched[0]);
+  }}
+}});
 resList.innerHTML='<p class="hint">Tapez les premi&egrave;res lettres de votre nom ou pr&eacute;nom</p>';
 </script>
 </body>
@@ -584,8 +590,29 @@ if not problems:
         with st.spinner("Optimisation en cours..."):
             solution, doublons = solve_speed_business(
                 participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)
-
         if solution:
+            st.session_state['solution']      = solution
+            st.session_state['doublons']      = doublons
+            st.session_state['snap_parts']    = list(participants)
+            st.session_state['snap_rounds']   = int(n_rounds)
+            st.session_state['snap_mpt']      = int(max_per_table)
+            st.session_state['snap_event']    = event_name
+            st.session_state['snap_obl_pairs']= list(obligation_pairs)
+        else:
+            st.session_state.pop('solution', None)
+
+    if st.session_state.get('solution'):
+        solution      = st.session_state['solution']
+        doublons      = st.session_state['doublons']
+        participants  = st.session_state['snap_parts']
+        n_rounds      = st.session_state['snap_rounds']
+        max_per_table = st.session_state['snap_mpt']
+        event_name    = st.session_state['snap_event']
+        obligation_pairs = st.session_state['snap_obl_pairs']
+        n_t           = math.ceil(len(participants) / max_per_table)
+        table_size    = len(participants) / n_t
+
+        if True:
             col_a, col_b, col_c = st.columns(3)
             with col_a:
                 st.metric("Doublons", doublons)
@@ -665,6 +692,7 @@ if not problems:
                         membres = df_round[df_round["Table"] == table_num]["Participant"].tolist()
                         st.write(f"🪑 **Table {table_num}** : {' • '.join(membres)}")
         else:
-            st.error("❌ Impossible de trouver une solution. Vérifiez vos contraintes d'exclusion.")
+            if not st.session_state.get('solution'):
+                st.error("❌ Impossible de trouver une solution. Vérifiez vos contraintes d'exclusion.")
 else:
     st.button("🚀 Générer la solution", disabled=True)
