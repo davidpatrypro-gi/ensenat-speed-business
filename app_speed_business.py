@@ -3,11 +3,11 @@ import pandas as pd
 import math
 import random
 import math as _m
-import json
+import json as _json
 from collections import defaultdict
 
 
-# --- GÉNÉRATION PAGE WEB QR CODE ---
+# --- GÉNÉRATION PAGE WEB ---
 def generate_lookup_html(solution, participants, n_rounds, event_name="Speed Business"):
     data = {}
     for name in participants:
@@ -15,154 +15,138 @@ def generate_lookup_html(solution, participants, n_rounds, event_name="Speed Bus
         for r in range(n_rounds):
             df = solution[r]
             row = df[df["Participant"] == name]
-            tables.append(int(row["Table"].values[0]) if len(row) > 0 else "?")
+            tables.append(int(row["Table"].values[0]) if len(row) > 0 else 0)
         data[name] = tables
 
-    data_json = json.dumps(data, ensure_ascii=False)
-    rounds_json = json.dumps(list(range(1, n_rounds + 1)))
+    data_js   = _json.dumps(data, ensure_ascii=True)
+    rounds_js = _json.dumps(list(range(1, n_rounds + 1)))
 
-    return f"""<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>{event_name} — Mes tables</title>
-<style>
-  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  :root {{
-    --bg: #0a0a0f; --surface: #13131a; --card: #1c1c26; --border: #2a2a3a;
-    --gold: #c9a84c; --gold-dim: #8a6e2f; --text: #f0eee8; --muted: #7a7a8a;
-    --radius: 16px; --radius-sm: 10px;
-  }}
-  html {{ scroll-behavior: smooth; }}
-  body {{ background: var(--bg); color: var(--text); font-family: 'Georgia','Times New Roman',serif; min-height: 100vh; padding-bottom: 60px; }}
-  .header {{ background: linear-gradient(160deg,#13131a 0%,#0d0d14 100%); border-bottom: 1px solid var(--border); padding: 36px 24px 28px; text-align: center; position: relative; overflow: hidden; }}
-  .header::before {{ content:''; position:absolute; inset:0; background:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(201,168,76,.12) 0%,transparent 70%); pointer-events:none; }}
-  .header-eyebrow {{ font-family:'Courier New',monospace; font-size:11px; letter-spacing:.25em; text-transform:uppercase; color:var(--gold); margin-bottom:10px; }}
-  .header-title {{ font-size:clamp(26px,7vw,42px); font-weight:normal; letter-spacing:-.02em; line-height:1.1; }}
-  .header-sub {{ margin-top:8px; font-size:14px; color:var(--muted); font-style:italic; }}
-  .search-wrap {{ padding:28px 20px 16px; max-width:540px; margin:0 auto; }}
-  .search-label {{ display:block; font-family:'Courier New',monospace; font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--gold); margin-bottom:10px; }}
-  .search-box {{ position:relative; }}
-  .search-icon {{ position:absolute; left:16px; top:50%; transform:translateY(-50%); color:var(--muted); font-size:18px; pointer-events:none; }}
-  #searchInput {{ width:100%; padding:16px 16px 16px 46px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-family:'Georgia',serif; font-size:17px; outline:none; transition:border-color .2s,box-shadow .2s; -webkit-appearance:none; }}
-  #searchInput::placeholder {{ color:var(--muted); }}
-  #searchInput:focus {{ border-color:var(--gold-dim); box-shadow:0 0 0 3px rgba(201,168,76,.12); }}
-  .results {{ max-width:540px; margin:0 auto; padding:0 20px; }}
-  .result-item {{ display:flex; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:8px; cursor:pointer; transition:border-color .15s,background .15s; -webkit-tap-highlight-color:transparent; }}
-  .result-item:hover,.result-item:active {{ border-color:var(--gold-dim); background:var(--card); }}
-  .result-name {{ font-size:16px; }}
-  .result-arrow {{ color:var(--gold); font-size:18px; }}
-  .no-result {{ text-align:center; color:var(--muted); font-style:italic; padding:24px 0; font-size:15px; }}
-  .hint {{ text-align:center; color:var(--muted); font-size:13px; padding:16px 0 0; font-style:italic; }}
-  .detail {{ display:none; max-width:540px; margin:0 auto; padding:0 20px; animation:fadeUp .25s ease; }}
-  .detail.visible {{ display:block; }}
-  @keyframes fadeUp {{ from {{ opacity:0; transform:translateY(12px); }} to {{ opacity:1; transform:translateY(0); }} }}
-  .detail-header {{ display:flex; align-items:center; gap:12px; margin-bottom:20px; }}
-  .back-btn {{ background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--gold); font-size:18px; padding:6px 12px; cursor:pointer; line-height:1; -webkit-tap-highlight-color:transparent; }}
-  .detail-name {{ font-size:clamp(20px,5vw,26px); font-weight:normal; flex:1; }}
-  .rotation-cards {{ display:grid; gap:14px; }}
-  .rotation-card {{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:20px 24px; display:flex; align-items:center; justify-content:space-between; position:relative; overflow:hidden; animation:fadeUp .3s ease both; }}
-  .rotation-card:nth-child(1){{animation-delay:.03s}}.rotation-card:nth-child(2){{animation-delay:.08s}}.rotation-card:nth-child(3){{animation-delay:.13s}}.rotation-card:nth-child(4){{animation-delay:.18s}}.rotation-card:nth-child(5){{animation-delay:.23s}}.rotation-card:nth-child(6){{animation-delay:.28s}}
-  .rotation-card::before {{ content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--gold); opacity:.6; }}
-  .card-left {{ display:flex; flex-direction:column; gap:2px; }}
-  .card-rotation-label,.card-table-label {{ font-family:'Courier New',monospace; font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); }}
-  .card-table-label {{ color:var(--gold); display:block; margin-bottom:2px; }}
-  .card-rotation-num {{ font-size:18px; }}
-  .card-table {{ text-align:right; }}
-  .card-table-num {{ font-size:clamp(36px,10vw,52px); font-weight:normal; line-height:1; color:var(--gold); letter-spacing:-.03em; }}
-  .footer {{ text-align:center; padding:40px 20px 20px; color:var(--muted); font-size:12px; font-style:italic; }}
-</style>
-</head>
-<body>
-<header class="header">
-  <p class="header-eyebrow">Planning de tables</p>
-  <h1 class="header-title">{event_name}</h1>
-  <p class="header-sub">{n_rounds} rotations &nbsp;&middot;&nbsp; Trouvez votre nom</p>
-</header>
-<div class="search-wrap">
-  <label class="search-label" for="searchInput">Recherchez votre nom</label>
-  <div class="search-box">
-    <span class="search-icon">&#128269;</span>
-    <input type="text" id="searchInput" placeholder="Ex : Marie ou Dupont&hellip;"
-           autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false"
-           oninput="renderList(this.value)">
-  </div>
-</div>
-<div class="results" id="resultsList"></div>
-<div class="detail" id="detail"></div>
-<footer class="footer">Speed Business Optimizer</footer>
-<script>
-var DATA={data_json};
-var ROUNDS={rounds_json};
-var names=Object.keys(DATA);
-var searchInput=document.getElementById('searchInput');
-var resList=document.getElementById('resultsList');
-var detail=document.getElementById('detail');
+    js_lines = [
+        "var DATA=" + data_js + ";",
+        "var ROUNDS=" + rounds_js + ";",
+        "var names=Object.keys(DATA);",
+        "function doSearch(){",
+        "  var q=document.getElementById('inp').value.trim().toLowerCase();",
+        "  var res=document.getElementById('res');",
+        "  var det=document.getElementById('det');",
+        "  det.style.display='none';",
+        "  if(!q){res.innerHTML='<p class=\"hint\">Tapez votre pr\u00e9nom ou votre nom</p>';return;}",
+        "  var found=[];",
+        "  for(var i=0;i<names.length;i++){",
+        "    var words=q.split(' ');",
+        "    for(var w=0;w<words.length;w++){",
+        "      if(words[w]&&names[i].toLowerCase().indexOf(words[w])>=0){found.push(names[i]);break;}",
+        "    }",
+        "  }",
+        "  if(!found.length){res.innerHTML='<p class=\"no-result\">Aucun r\u00e9sultat &mdash; v\u00e9rifiez l\u2019orthographe</p>';return;}",
+        "  if(found.length===1){showDetail(found[0]);return;}",
+        "  var html='';",
+        "  for(var j=0;j<found.length;j++){",
+        "    var safe=found[j].replace(/&/g,'&amp;').replace(/\"/g,'&quot;');",
+        "    html+='<div class=\"result-item\" data-n=\"'+safe+'\" onclick=\"showDetail(this.dataset.n)\">'",
+        "         +'<span>'+found[j]+'</span><span class=\"arr\">&rsaquo;</span></div>';",
+        "  }",
+        "  res.innerHTML=html;",
+        "}",
+        "function showDetail(name){",
+        "  document.getElementById('res').innerHTML='';",
+        "  var tables=DATA[name];if(!tables)return;",
+        "  var cards='';",
+        "  for(var i=0;i<ROUNDS.length;i++){",
+        "    cards+='<div class=\"card\"><div class=\"cl\"><span class=\"lbl\">Rotation</span>'",
+        "          +'<span class=\"rnum\">'+ROUNDS[i]+'</span></div>'",
+        "          +'<div class=\"ct\"><span class=\"lbl gold\">Table</span>'",
+        "          +'<span class=\"tnum\">'+tables[i]+'</span></div></div>';",
+        "  }",
+        "  var det=document.getElementById('det');",
+        "  det.innerHTML='<div class=\"dh\"><button class=\"back\" onclick=\"goBack()\">&larr;</button>'",
+        "               +'<h2 class=\"dname\">'+name+'</h2></div><div class=\"cards\">'+cards+'</div>';",
+        "  det.style.display='block';window.scrollTo(0,0);",
+        "}",
+        "function goBack(){",
+        "  document.getElementById('det').style.display='none';",
+        "  document.getElementById('res').innerHTML='';",
+        "  document.getElementById('inp').value='';",
+        "  document.getElementById('inp').focus();",
+        "}",
+        "document.getElementById('inp').addEventListener('input',function(){doSearch();});",
+        "document.getElementById('inp').addEventListener('keyup',function(e){if(e.key==='Enter')doSearch();});",
+        "document.getElementById('res').innerHTML='<p class=\"hint\">Tapez votre pr\u00e9nom ou votre nom</p>';",
+    ]
+    js = "\n".join(js_lines)
 
-function matchScore(name, query) {{
-  var nameLow=name.toLowerCase();
-  var words=query.toLowerCase().trim().split(/\s+/).filter(function(w){{return w.length>0;}});
-  if(!words.length) return 0;
-  var hits=words.filter(function(w){{return nameLow.indexOf(w)>=0;}});
-  return hits.length/words.length;
-}}
+    css = "\n".join([
+        "*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}",
+        ":root{--bg:#0a0a0f;--surf:#13131a;--card:#1c1c26;--bord:#2a2a3a;--gold:#c9a84c;--goldd:#8a6e2f;--txt:#f0eee8;--mut:#7a7a8a;--r:16px}",
+        "body{background:var(--bg);color:var(--txt);font-family:Georgia,'Times New Roman',serif;min-height:100vh;padding-bottom:60px}",
+        ".hdr{background:linear-gradient(160deg,#13131a,#0d0d14);border-bottom:1px solid var(--bord);padding:36px 24px 28px;text-align:center;position:relative;overflow:hidden}",
+        ".hdr::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(201,168,76,.13) 0%,transparent 70%);pointer-events:none}",
+        ".eye{font-family:'Courier New',monospace;font-size:11px;letter-spacing:.25em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}",
+        ".ttl{font-size:clamp(26px,7vw,42px);font-weight:normal;letter-spacing:-.02em;line-height:1.1}",
+        ".sub{margin-top:8px;font-size:14px;color:var(--mut);font-style:italic}",
+        ".wrap{padding:28px 20px 16px;max-width:540px;margin:0 auto}",
+        ".lbl-s{display:block;font-family:'Courier New',monospace;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}",
+        ".row{display:flex;gap:10px}",
+        "#inp{flex:1;padding:15px 16px;background:var(--surf);border:1px solid var(--bord);border-radius:var(--r);color:var(--txt);font-family:Georgia,serif;font-size:17px;outline:none;-webkit-appearance:none;min-width:0}",
+        "#inp:focus{border-color:var(--goldd);box-shadow:0 0 0 3px rgba(201,168,76,.12)}",
+        "#inp::placeholder{color:var(--mut)}",
+        "#btn{flex-shrink:0;background:var(--gold);border:none;border-radius:var(--r);color:#0a0a0f;font-family:'Courier New',monospace;font-size:13px;font-weight:bold;letter-spacing:.06em;padding:0 20px;cursor:pointer}",
+        "#btn:active{opacity:.75}",
+        "#res,#det{max-width:540px;margin:10px auto 0;padding:0 20px}",
+        "#det{display:none}",
+        ".hint,.no-result{text-align:center;color:var(--mut);font-style:italic;padding:20px 0;font-size:14px}",
+        ".result-item{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;background:var(--surf);border:1px solid var(--bord);border-radius:10px;margin-bottom:8px;cursor:pointer}",
+        ".result-item:hover{border-color:var(--goldd);background:var(--card)}",
+        ".arr{color:var(--gold);font-size:18px}",
+        ".dh{display:flex;align-items:center;gap:12px;margin-bottom:20px}",
+        ".back{background:var(--surf);border:1px solid var(--bord);border-radius:8px;color:var(--gold);font-size:18px;padding:6px 12px;cursor:pointer;line-height:1}",
+        ".dname{font-size:clamp(20px,5vw,26px);font-weight:normal;flex:1}",
+        ".cards{display:grid;gap:14px}",
+        ".card{background:var(--card);border:1px solid var(--bord);border-radius:var(--r);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;position:relative;overflow:hidden}",
+        ".card::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold)}",
+        ".cl{flex:1}",
+        ".lbl{display:block;font-family:'Courier New',monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--mut)}",
+        ".gold{color:var(--gold)!important}",
+        ".rnum{font-size:18px}",
+        ".ct{text-align:right}",
+        ".tnum{display:block;font-size:clamp(38px,10vw,54px);font-weight:normal;line-height:1;color:var(--gold);letter-spacing:-.03em}",
+        ".foot{text-align:center;padding:40px 20px 0;color:var(--mut);font-size:12px;font-style:italic}",
+    ])
 
-function renderList(query) {{
-  detail.classList.remove('visible');
-  var q=query.trim();
-  if(!q) {{
-    resList.innerHTML='<p class="hint">Tapez votre pr&eacute;nom ou votre nom</p>';
-    return;
-  }}
-  var scored=[];
-  for(var i=0;i<names.length;i++) {{
-    var s=matchScore(names[i],q);
-    if(s>0) scored.push({{name:names[i],score:s}});
-  }}
-  scored.sort(function(a,b){{return b.score-a.score;}});
-  if(!scored.length) {{
-    resList.innerHTML='<p class="no-result">Aucun participant trouv&eacute; — v&eacute;rifiez l'orthographe</p>';
-    return;
-  }}
-  if(scored.length===1) {{ showDetail(scored[0].name); return; }}
-  var html='';
-  for(var j=0;j<scored.length;j++) {{
-    var n=scored[j].name;
-    html+='<div class="result-item" onclick="showDetail(this.getAttribute('data-name'))" data-name="'+n.replace(/&/g,'&amp;').replace(/"/g,'&quot;')+'"><span class="result-name">'+n+'</span><span class="result-arrow">&rsaquo;</span></div>';
-  }}
-  resList.innerHTML=html;
-}}
-
-function showDetail(name) {{
-  resList.innerHTML='';
-  var tables=DATA[name];
-  if(!tables) {{ resList.innerHTML='<p class="no-result">Participant introuvable</p>'; return; }}
-  var cards='';
-  for(var i=0;i<ROUNDS.length;i++) {{
-    cards+='<div class="rotation-card"><div class="card-left"><span class="card-rotation-label">Rotation</span><span class="card-rotation-num">'+ROUNDS[i]+'</span></div><div class="card-table"><span class="card-table-label">Table</span><span class="card-table-num">'+tables[i]+'</span></div></div>';
-  }}
-  detail.innerHTML='<div class="detail-header"><button class="back-btn" onclick="backToSearch()">&larr;</button><h2 class="detail-name">'+name+'</h2></div><div class="rotation-cards">'+cards+'</div>';
-  detail.classList.add('visible');
-  window.scrollTo({{top:0,behavior:'smooth'}});
-}}
-
-function backToSearch() {{
-  detail.classList.remove('visible');
-  resList.innerHTML='<p class="hint">Tapez votre pr&eacute;nom ou votre nom</p>';
-  searchInput.value='';
-  searchInput.focus();
-}}
-
-searchInput.addEventListener('input', function(){{ renderList(searchInput.value); }});
-searchInput.addEventListener('keyup', function(e) {{
-  if(e.key==='Enter') renderList(searchInput.value);
-}});
-
-resList.innerHTML='<p class="hint">Tapez votre pr&eacute;nom ou votre nom</p>';
-</script>
-</body>
-</html>"""
+    parts = [
+        "<!DOCTYPE html>",
+        "<html lang='fr'>",
+        "<head>",
+        "<meta charset='UTF-8'>",
+        "<meta name='viewport' content='width=device-width,initial-scale=1.0,maximum-scale=1.0'>",
+        "<title>" + event_name + " \u2014 Mes tables</title>",
+        "<style>",
+        css,
+        "</style>",
+        "</head>",
+        "<body>",
+        "<header class='hdr'>",
+        "  <p class='eye'>Planning de tables</p>",
+        "  <h1 class='ttl'>" + event_name + "</h1>",
+        "  <p class='sub'>" + str(n_rounds) + " rotations &middot; Trouvez votre nom</p>",
+        "</header>",
+        "<div class='wrap'>",
+        "  <label class='lbl-s' for='inp'>Recherchez votre nom</label>",
+        "  <div class='row'>",
+        "    <input type='text' id='inp' placeholder='Ex\u00a0: Marie ou Dupont\u2026' autocomplete='off' spellcheck='false'>",
+        "    <button id='btn' onclick='doSearch()'>Rechercher</button>",
+        "  </div>",
+        "</div>",
+        "<div id='res'></div>",
+        "<div id='det'></div>",
+        "<p class='foot'>Speed Business Optimizer</p>",
+        "<script>",
+        js,
+        "</script>",
+        "</body>",
+        "</html>",
+    ]
+    return "\n".join(parts)
 
 
 # --- DIAGNOSTIC ---
@@ -622,26 +606,26 @@ if not problems:
             solution, doublons = solve_speed_business(
                 participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)
         if solution:
-            st.session_state['solution']      = solution
-            st.session_state['doublons']      = doublons
-            st.session_state['snap_parts']    = list(participants)
-            st.session_state['snap_rounds']   = int(n_rounds)
-            st.session_state['snap_mpt']      = int(max_per_table)
-            st.session_state['snap_event']    = event_name
-            st.session_state['snap_obl_pairs']= list(obligation_pairs)
+            st.session_state['solution']       = solution
+            st.session_state['doublons']       = doublons
+            st.session_state['snap_parts']     = list(participants)
+            st.session_state['snap_rounds']    = int(n_rounds)
+            st.session_state['snap_mpt']       = int(max_per_table)
+            st.session_state['snap_event']     = event_name
+            st.session_state['snap_obl_pairs'] = list(obligation_pairs)
         else:
             st.session_state.pop('solution', None)
 
     if st.session_state.get('solution'):
-        solution      = st.session_state['solution']
-        doublons      = st.session_state['doublons']
-        participants  = st.session_state['snap_parts']
-        n_rounds      = st.session_state['snap_rounds']
-        max_per_table = st.session_state['snap_mpt']
-        event_name    = st.session_state['snap_event']
+        solution         = st.session_state['solution']
+        doublons         = st.session_state['doublons']
+        participants     = st.session_state['snap_parts']
+        n_rounds         = st.session_state['snap_rounds']
+        max_per_table    = st.session_state['snap_mpt']
+        event_name       = st.session_state['snap_event']
         obligation_pairs = st.session_state['snap_obl_pairs']
-        n_t           = math.ceil(len(participants) / max_per_table)
-        table_size    = len(participants) / n_t
+        n_t              = math.ceil(len(participants) / max_per_table)
+        table_size       = len(participants) / n_t
 
         if True:
             col_a, col_b, col_c = st.columns(3)
@@ -695,8 +679,6 @@ if not problems:
             elif obligation_pairs:
                 st.success("✅ Toutes les obligations sont respectées.")
 
-            df_total = pd.concat(solution)
-            csv = df_total.to_csv(index=False).encode('utf-8-sig')
             st.markdown("---")
             st.markdown("### 📤 Exports")
             col_dl1, col_dl2 = st.columns(2)
@@ -708,11 +690,8 @@ if not problems:
                 html_content = generate_lookup_html(solution, participants, n_rounds, event_name)
                 st.download_button("🌐 Page web (QR code)", html_content.encode("utf-8"), "index.html", "text/html", use_container_width=True)
             st.info(
-                "💡 **Comment utiliser la page web ?**  \n"
-                "1. Téléchargez `planning.html`  \n"
-                "2. Glissez-déposez sur **netlify.com/drop** (gratuit, 10 sec)  \n"
-                "3. Copiez l\'URL → QR code sur **qrcode-monkey.com**  \n"
-                "4. Affichez le QR code à l\'entrée ✅"
+                "💡 **Page web** : ouvrez le fichier `index.html` téléchargé directement dans votre navigateur, "
+                "ou déposez-le sur **netlify.com/drop** pour obtenir une URL + QR code."
             )
             st.markdown("---")
             tabs = st.tabs([f"Rotation {i + 1}" for i in range(n_rounds)])
