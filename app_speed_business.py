@@ -675,7 +675,7 @@ if not problems:
                 st.download_button("📥 Télécharger CSV", csv, "planning.csv", "text/csv", use_container_width=True)
             with col_dl2:
                 html_content = generate_lookup_html(solution, participants, n_rounds, event_name)
-                st.download_button("🌐 Page web (QR code)", html_content.encode("utf-8"), "planning.html", "text/html", use_container_width=True)
+                st.download_button("🌐 Page web (QR code)", html_content.encode("utf-8"), "index.html", "text/html", use_container_width=True)
             st.info(
                 "💡 **Comment utiliser la page web ?**  \n"
                 "1. Téléchargez `planning.html`  \n"
