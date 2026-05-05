@@ -3,7 +3,129 @@ import pandas as pd
 import math
 import random
 import math as _m
+import json
 from collections import defaultdict
+
+
+# --- GÉNÉRATION PAGE WEB QR CODE ---
+def generate_lookup_html(solution, participants, n_rounds, event_name="Speed Business"):
+    data = {}
+    for name in participants:
+        tables = []
+        for r in range(n_rounds):
+            df = solution[r]
+            row = df[df["Participant"] == name]
+            tables.append(int(row["Table"].values[0]) if len(row) > 0 else "?")
+        data[name] = tables
+
+    data_json = json.dumps(data, ensure_ascii=False)
+    rounds_json = json.dumps(list(range(1, n_rounds + 1)))
+
+    return f"""<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>{event_name} — Mes tables</title>
+<style>
+  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  :root {{
+    --bg: #0a0a0f; --surface: #13131a; --card: #1c1c26; --border: #2a2a3a;
+    --gold: #c9a84c; --gold-dim: #8a6e2f; --text: #f0eee8; --muted: #7a7a8a;
+    --radius: 16px; --radius-sm: 10px;
+  }}
+  html {{ scroll-behavior: smooth; }}
+  body {{ background: var(--bg); color: var(--text); font-family: 'Georgia','Times New Roman',serif; min-height: 100vh; padding-bottom: 60px; }}
+  .header {{ background: linear-gradient(160deg,#13131a 0%,#0d0d14 100%); border-bottom: 1px solid var(--border); padding: 36px 24px 28px; text-align: center; position: relative; overflow: hidden; }}
+  .header::before {{ content:''; position:absolute; inset:0; background:radial-gradient(ellipse 80% 60% at 50% -10%,rgba(201,168,76,.12) 0%,transparent 70%); pointer-events:none; }}
+  .header-eyebrow {{ font-family:'Courier New',monospace; font-size:11px; letter-spacing:.25em; text-transform:uppercase; color:var(--gold); margin-bottom:10px; }}
+  .header-title {{ font-size:clamp(26px,7vw,42px); font-weight:normal; letter-spacing:-.02em; line-height:1.1; }}
+  .header-sub {{ margin-top:8px; font-size:14px; color:var(--muted); font-style:italic; }}
+  .search-wrap {{ padding:28px 20px 16px; max-width:540px; margin:0 auto; }}
+  .search-label {{ display:block; font-family:'Courier New',monospace; font-size:10px; letter-spacing:.2em; text-transform:uppercase; color:var(--gold); margin-bottom:10px; }}
+  .search-box {{ position:relative; }}
+  .search-icon {{ position:absolute; left:16px; top:50%; transform:translateY(-50%); color:var(--muted); font-size:18px; pointer-events:none; }}
+  #searchInput {{ width:100%; padding:16px 16px 16px 46px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); font-family:'Georgia',serif; font-size:17px; outline:none; transition:border-color .2s,box-shadow .2s; -webkit-appearance:none; }}
+  #searchInput::placeholder {{ color:var(--muted); }}
+  #searchInput:focus {{ border-color:var(--gold-dim); box-shadow:0 0 0 3px rgba(201,168,76,.12); }}
+  .results {{ max-width:540px; margin:0 auto; padding:0 20px; }}
+  .result-item {{ display:flex; align-items:center; justify-content:space-between; padding:14px 18px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:8px; cursor:pointer; transition:border-color .15s,background .15s; -webkit-tap-highlight-color:transparent; }}
+  .result-item:hover,.result-item:active {{ border-color:var(--gold-dim); background:var(--card); }}
+  .result-name {{ font-size:16px; }}
+  .result-arrow {{ color:var(--gold); font-size:18px; }}
+  .no-result {{ text-align:center; color:var(--muted); font-style:italic; padding:24px 0; font-size:15px; }}
+  .hint {{ text-align:center; color:var(--muted); font-size:13px; padding:16px 0 0; font-style:italic; }}
+  .detail {{ display:none; max-width:540px; margin:0 auto; padding:0 20px; animation:fadeUp .25s ease; }}
+  .detail.visible {{ display:block; }}
+  @keyframes fadeUp {{ from {{ opacity:0; transform:translateY(12px); }} to {{ opacity:1; transform:translateY(0); }} }}
+  .detail-header {{ display:flex; align-items:center; gap:12px; margin-bottom:20px; }}
+  .back-btn {{ background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--gold); font-size:18px; padding:6px 12px; cursor:pointer; line-height:1; -webkit-tap-highlight-color:transparent; }}
+  .detail-name {{ font-size:clamp(20px,5vw,26px); font-weight:normal; flex:1; }}
+  .rotation-cards {{ display:grid; gap:14px; }}
+  .rotation-card {{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:20px 24px; display:flex; align-items:center; justify-content:space-between; position:relative; overflow:hidden; animation:fadeUp .3s ease both; }}
+  .rotation-card:nth-child(1){{animation-delay:.03s}}.rotation-card:nth-child(2){{animation-delay:.08s}}.rotation-card:nth-child(3){{animation-delay:.13s}}.rotation-card:nth-child(4){{animation-delay:.18s}}.rotation-card:nth-child(5){{animation-delay:.23s}}.rotation-card:nth-child(6){{animation-delay:.28s}}
+  .rotation-card::before {{ content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--gold); opacity:.6; }}
+  .card-left {{ display:flex; flex-direction:column; gap:2px; }}
+  .card-rotation-label,.card-table-label {{ font-family:'Courier New',monospace; font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--muted); }}
+  .card-table-label {{ color:var(--gold); display:block; margin-bottom:2px; }}
+  .card-rotation-num {{ font-size:18px; }}
+  .card-table {{ text-align:right; }}
+  .card-table-num {{ font-size:clamp(36px,10vw,52px); font-weight:normal; line-height:1; color:var(--gold); letter-spacing:-.03em; }}
+  .footer {{ text-align:center; padding:40px 20px 20px; color:var(--muted); font-size:12px; font-style:italic; }}
+</style>
+</head>
+<body>
+<header class="header">
+  <p class="header-eyebrow">Planning de tables</p>
+  <h1 class="header-title">{event_name}</h1>
+  <p class="header-sub">{n_rounds} rotations &nbsp;&middot;&nbsp; Trouvez votre nom</p>
+</header>
+<div class="search-wrap">
+  <label class="search-label" for="searchInput">Recherchez votre nom</label>
+  <div class="search-box">
+    <span class="search-icon">&#128269;</span>
+    <input type="search" id="searchInput" placeholder="Ex : Marie Dupont&hellip;"
+           autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false">
+  </div>
+</div>
+<div class="results" id="resultsList"></div>
+<div class="detail" id="detail"></div>
+<footer class="footer">Speed Business Optimizer</footer>
+<script>
+const DATA={data_json};
+const ROUNDS={rounds_json};
+const names=Object.keys(DATA);
+const input=document.getElementById('searchInput');
+const resList=document.getElementById('resultsList');
+const detail=document.getElementById('detail');
+function renderList(query){{
+  detail.classList.remove('visible');
+  const q=query.trim().toLowerCase();
+  if(!q){{resList.innerHTML='<p class="hint">Tapez les premi&egrave;res lettres de votre nom ou pr&eacute;nom</p>';return;}}
+  const matched=names.filter(n=>n.toLowerCase().includes(q));
+  if(!matched.length){{resList.innerHTML='<p class="no-result">Aucun participant trouv&eacute;</p>';return;}}
+  if(matched.length===1){{showDetail(matched[0]);return;}}
+  resList.innerHTML=matched.map(name=>'<div class="result-item" onclick="showDetail(\''+name.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')">'+'<span class="result-name">'+name+'</span><span class="result-arrow">&rsaquo;</span></div>').join('');
+}}
+function showDetail(name){{
+  resList.innerHTML='';
+  const tables=DATA[name];
+  const cards=ROUNDS.map((r,i)=>'<div class="rotation-card"><div class="card-left"><span class="card-rotation-label">Rotation</span><span class="card-rotation-num">'+r+'</span></div><div class="card-table"><span class="card-table-label">Table</span><span class="card-table-num">'+tables[i]+'</span></div></div>').join('');
+  detail.innerHTML='<div class="detail-header"><button class="back-btn" onclick="backToSearch()">&larr;</button><h2 class="detail-name">'+name+'</h2></div><div class="rotation-cards">'+cards+'</div>';
+  detail.classList.add('visible');
+  detail.scrollIntoView({{behavior:'smooth',block:'start'}});
+}}
+function backToSearch(){{
+  detail.classList.remove('visible');
+  resList.innerHTML='';
+  input.value='';
+  input.focus();
+}}
+input.addEventListener('input',()=>renderList(input.value));
+resList.innerHTML='<p class="hint">Tapez les premi&egrave;res lettres de votre nom ou pr&eacute;nom</p>';
+</script>
+</body>
+</html>"""
 
 
 # --- DIAGNOSTIC ---
@@ -411,6 +533,7 @@ st.title("🛡️ Speed Business Optimizer")
 
 with st.sidebar:
     st.header("⚙️ Configuration")
+    event_name = st.text_input("Nom de l'événement", "Speed Business")
     raw_names = st.text_area("Participants (un par ligne)",
                              "Jean\nMarie\nPierre\nSophie\nLuc\nJulie\nAntoine\nClara\nEmma\nPaul")
     participants = [n.strip() for n in raw_names.split('\n') if n.strip()]
@@ -516,8 +639,24 @@ if not problems:
 
             df_total = pd.concat(solution)
             csv = df_total.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 Télécharger CSV", csv, "planning.csv", "text/csv")
-
+            st.markdown("---")
+            st.markdown("### 📤 Exports")
+            col_dl1, col_dl2 = st.columns(2)
+            with col_dl1:
+                df_total = pd.concat(solution)
+                csv = df_total.to_csv(index=False).encode('utf-8-sig')
+                st.download_button("📥 Télécharger CSV", csv, "planning.csv", "text/csv", use_container_width=True)
+            with col_dl2:
+                html_content = generate_lookup_html(solution, participants, n_rounds, event_name)
+                st.download_button("🌐 Page web (QR code)", html_content.encode("utf-8"), "planning.html", "text/html", use_container_width=True)
+            st.info(
+                "💡 **Comment utiliser la page web ?**  \n"
+                "1. Téléchargez `planning.html`  \n"
+                "2. Glissez-déposez sur **netlify.com/drop** (gratuit, 10 sec)  \n"
+                "3. Copiez l\'URL → QR code sur **qrcode-monkey.com**  \n"
+                "4. Affichez le QR code à l\'entrée ✅"
+            )
+            st.markdown("---")
             tabs = st.tabs([f"Rotation {i + 1}" for i in range(n_rounds)])
             for i, tab in enumerate(tabs):
                 with tab:
