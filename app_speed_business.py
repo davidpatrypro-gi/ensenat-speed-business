@@ -151,6 +151,35 @@ def generate_lookup_html(solution, participants, n_rounds, event_name="Speed Bus
     return "\n".join(parts)
 
 
+
+# --- DÉDUPLICATION DES HOMONYMES ---
+def deduplicate_names(names):
+    """
+    Détecte les noms en double et ajoute un suffixe (2), (3)...
+    Retourne (liste_dédupliquée, dict_des_renommages).
+    """
+    from collections import Counter
+    count = Counter(names)
+    duplicates = {n for n, c in count.items() if c > 1}
+    if not duplicates:
+        return list(names), {}
+
+    renamed = {}   # ancien_nom_occurrence → nouveau_nom
+    seen = {}      # nom → compteur
+    result = []
+    for n in names:
+        if n in duplicates:
+            seen[n] = seen.get(n, 0) + 1
+            if seen[n] == 1:
+                result.append(n)           # premier : on garde l'original
+            else:
+                new_name = f"{n} ({seen[n]})"
+                result.append(new_name)
+                renamed[f"{n}__occ{seen[n]}"] = new_name
+        else:
+            result.append(n)
+    return result, renamed
+
 # --- DIAGNOSTIC ---
 def diagnose(participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs):
     n_p = len(participants)
@@ -559,13 +588,23 @@ with st.sidebar:
     event_name = st.text_input("Nom de l'événement", "Speed Business")
     raw_names = st.text_area("Participants (un par ligne)",
                              "Jean\nMarie\nPierre\nSophie\nLuc\nJulie\nAntoine\nClara\nEmma\nPaul")
-    participants = [n.strip() for n in raw_names.split('\n') if n.strip()]
+    participants_raw = [n.strip() for n in raw_names.split('\n') if n.strip()]
+    participants, homonymes = deduplicate_names(participants_raw)
     n_p = len(participants)
     n_rounds = st.number_input("Nombre de rotations", 1, 10, 4)
     max_per_table = st.number_input("Max personnes par table", 2, 20, 5)
     n_t = math.ceil(n_p / max_per_table)
     table_size = n_p / n_t
     st.info(f"**{n_p} participants | {n_t} tables de {table_size:.0f}**")
+
+if homonymes:
+    renamed_display = ", ".join(
+        f"**{v}**" for v in sorted(set(homonymes.values()))
+    )
+    st.warning(
+        f"⚠️ Homonymes détectés et renommés automatiquement : {renamed_display}. "
+        f"Communiquez leur suffixe aux personnes concernées."
+    )
 
 col1, col2 = st.columns(2)
 with col1:
