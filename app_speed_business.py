@@ -600,6 +600,8 @@ if not problems:
         if solution:
             st.session_state['solution']       = solution
             st.session_state['doublons']       = doublons
+            st.session_state['excl_violations']= excl_violations
+            st.session_state['obl_violations'] = obl_violations
             st.session_state['snap_parts']     = list(participants)
             st.session_state['snap_rounds']    = int(n_rounds)
             st.session_state['snap_mpt']       = int(max_per_table)
@@ -611,6 +613,8 @@ if not problems:
     if st.session_state.get('solution'):
         solution         = st.session_state['solution']
         doublons         = st.session_state['doublons']
+        excl_violations  = st.session_state.get('excl_violations', 0)
+        obl_violations   = st.session_state.get('obl_violations', 0)
         participants     = st.session_state['snap_parts']
         n_rounds         = st.session_state['snap_rounds']
         max_per_table    = st.session_state['snap_mpt']
