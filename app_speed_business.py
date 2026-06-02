@@ -260,7 +260,6 @@ def solve_speed_business(participants, max_per_table, n_rounds, exclusion_groups
     n_t = math.ceil(n_p / max_per_table)
     target = [n_p // n_t + (1 if t < n_p % n_t else 0) for t in range(n_t)]
 
-    # ── Précomputation des contraintes ──────────────────────────────────────
     excl_sets = [frozenset(i for i, name in enumerate(participants) if name in g)
                  for g in exclusion_groups if sum(1 for p in participants if p in g) >= 2]
     excl_for = defaultdict(list)
@@ -276,17 +275,16 @@ def solve_speed_business(participants, max_per_table, n_rounds, exclusion_groups
         if a in participants and b in participants:
             ia, ib = participants.index(a), participants.index(b)
             obl_idx.append((min(ia, ib), max(ia, ib)))
-    # Déduplique et indexe pour lookup O(1)
     obl_idx = list(set(obl_idx))
     obl_set = set(obl_idx)
 
-    # ── Fonctions utilitaires ────────────────────────────────────────────────
+    # ── Utilitaires ──────────────────────────────────────────────────────────
+
     def build_m(plan):
         m = [[0] * n_p for _ in range(n_p)]
         for rnd in plan:
             by_t = defaultdict(list)
-            for p in range(n_p):
-                by_t[rnd[p]].append(p)
+            for p in range(n_p): by_t[rnd[p]].append(p)
             for members in by_t.values():
                 for i in range(len(members)):
                     for j in range(i + 1, len(members)):
@@ -295,65 +293,74 @@ def solve_speed_business(participants, max_per_table, n_rounds, exclusion_groups
         return m
 
     def count_d(m):
-        # Total des rencontres en excès (doublons = rencontres au-delà de 1)
         return sum(max(0, m[i][j] - 1) for i in range(n_p) for j in range(i + 1, n_p))
 
     def count_obl_miss(m):
-        # Nombre d'obligations non satisfaites
         return sum(1 for a, b in obl_idx if m[a][b] == 0)
+
+    def count_excl_viol(plan):
+        """Nombre de paires exclusion qui se retrouvent à la même table."""
+        total = 0
+        for rnd in plan:
+            by_t = defaultdict(list)
+            for p in range(n_p): by_t[rnd[p]].append(p)
+            for members in by_t.values():
+                mset = set(members)
+                for s in excl_sets:
+                    overlap = s & mset
+                    if len(overlap) >= 2:
+                        # nombre de paires en violation dans cette table
+                        total += len(overlap) * (len(overlap) - 1) // 2
+        return total
+
+    def in_same_excl(p, q):
+        for s in excl_for[p]:
+            if q in s: return True
+        return False
+
+    def stag_ok(plan, r, p, t):
+        if r > 0 and plan[r - 1][p] == t: return False
+        if r < n_rounds - 1 and plan[r + 1][p] == t: return False
+        return True
 
     def excl_ok(asgn, p, t):
         for s in excl_for[p]:
             for other in s:
-                if other != p and asgn[other] == t:
-                    return False
+                if other != p and asgn[other] == t: return False
         return True
 
-    def stag_ok(plan, r, p, t):
-        # Anti-stagnation : pas la même table deux rotations de suite
-        if r > 0 and plan[r - 1][p] == t:
-            return False
-        if r < n_rounds - 1 and plan[r + 1][p] == t:
-            return False
-        return True
-
-    # ── Greedy orientée obligations ──────────────────────────────────────────
-    # Amélioration : les participants avec des obligations non satisfaites
-    # sont placés en priorité, et un bonus attire leurs partenaires obligatoires.
+    # ── Greedy orientée obligations (exclusions = best effort) ───────────────
     def make_greedy():
         meet = [[0] * n_p for _ in range(n_p)]
         plan = []
-
         for r in range(n_rounds):
             tc = [0] * n_t
             asgn = [-1] * n_p
             prev = plan[r - 1] if r > 0 else None
-
-            # Priorité aux participants avec le plus d'obligations non satisfaites
             unmet_count = {p: 0 for p in range(n_p)}
             for a, b in obl_idx:
                 if meet[a][b] == 0:
-                    unmet_count[a] += 1
-                    unmet_count[b] += 1
-
+                    unmet_count[a] += 1; unmet_count[b] += 1
             order = sorted(range(n_p), key=lambda p: (-unmet_count[p], random.random()))
-
             for p in order:
-                valid = [t for t in range(n_t)
-                         if tc[t] < target[t]
-                         and (prev is None or t != prev[p])
-                         and excl_ok(asgn, p, t)]
+                # Priorité 1 : anti-stag + exclusion respectées
+                valid = [t for t in range(n_t) if tc[t] < target[t]
+                         and (prev is None or t != prev[p]) and excl_ok(asgn, p, t)]
+                # Priorité 2 : relâcher anti-stagnation
                 if not valid:
-                    # Relâcher anti-stagnation en dernier recours
-                    valid = [t for t in range(n_t)
-                             if tc[t] < target[t] and excl_ok(asgn, p, t)]
+                    valid = [t for t in range(n_t) if tc[t] < target[t]
+                             and excl_ok(asgn, p, t)]
+                # Priorité 3 : relâcher exclusion (JAMAIS les doublons)
                 if not valid:
-                    return None
+                    valid = [t for t in range(n_t) if tc[t] < target[t]
+                             and (prev is None or t != prev[p])]
+                # Priorité 4 : relâcher tout sauf capacité
+                if not valid:
+                    valid = [t for t in range(n_t) if tc[t] < target[t]]
+                if not valid: return None
 
                 def tbl_cost(t):
-                    # Pénalité : rencontres déjà vues
                     cost = sum(meet[p][q] * 2 for q in range(n_p) if asgn[q] == t)
-                    # Bonus : réunir des paires obligatoires jamais encore ensemble
                     for q in range(n_p):
                         if asgn[q] == t and (min(p, q), max(p, q)) in obl_set and meet[p][q] == 0:
                             cost -= 20
@@ -361,10 +368,8 @@ def solve_speed_business(participants, max_per_table, n_rounds, exclusion_groups
 
                 asgn[p] = min(valid, key=tbl_cost)
                 tc[asgn[p]] += 1
-
             by_t = defaultdict(list)
-            for p in range(n_p):
-                by_t[asgn[p]].append(p)
+            for p in range(n_p): by_t[asgn[p]].append(p)
             for members in by_t.values():
                 for i in range(len(members)):
                     for j in range(i + 1, len(members)):
@@ -373,210 +378,156 @@ def solve_speed_business(participants, max_per_table, n_rounds, exclusion_groups
             plan.append(asgn)
         return plan
 
-    # ── Recuit simulé (SA) amélioré ──────────────────────────────────────────
+    # ── Recuit simulé — Hiérarchie : doublons >> exclusions > obligations ────
     #
-    # Améliorations vs version originale :
-    # 1. Bug corrigé : delta doublons correct pour m >= 3
-    #    (original : delta=0 au lieu de -1 pour m=3)
-    # 2. Delta obligations incrémental dans le SA
-    #    (original : obligations seulement vérifiées globalement à la fin)
-    # 3. Pénalité proportionnelle : obl_miss * 5000 (original : 0 ou 5000 binaire)
-    # 4. Reheat adaptatif si bloqué dans un minimum local
-    # 5. Or-opt : déplacer une seule personne (utile pour tables de tailles inégales)
-    # 6. Correction de dérive périodique des compteurs incrémentaux
+    # Poids du score :
+    #   1 doublon          = 100 000 pts  (priorité absolue)
+    #   1 viol. exclusion  =     500 pts  (best effort)
+    #   1 oblig. manquée   =   2 000 pts  (best effort)
+    #
+    # → l'algo préférera toujours violer une exclusion plutôt qu'accepter
+    #   un seul doublon, quelles que soient les contraintes.
+
+    W_DUP  = 100_000
+    W_EXCL =     500
+    W_OBL  =   2_000
 
     best_plan, best_score = None, float('inf')
 
     for attempt in range(30):
         plan = make_greedy()
-        if not plan:
-            continue
+        if not plan: continue
 
         m = build_m(plan)
-        d = count_d(m)
+        d        = count_d(m)
         obl_miss = count_obl_miss(m)
-        score = d * 1000 + obl_miss * 5000
+        excl_v   = count_excl_viol(plan)
+        score    = d * W_DUP + excl_v * W_EXCL + obl_miss * W_OBL
 
-        T = 5.0       # Température initiale (unités : équivalents-doublons)
-        T_min = 5e-4
-        n_steps = 200_000
+        T = 5.0; T_min = 5e-4; n_steps = 200_000
         cooling = (T_min / T) ** (1.0 / n_steps)
-
         no_improve = 0
         best_local = score
         best_local_plan = [list(rr) for rr in plan]
 
         for step in range(n_steps):
             T *= cooling
-
-            # ── Reheat adaptatif ─────────────────────────────────────────────
-            # Si aucune amélioration depuis 20 000 étapes, on réchauffe
             if no_improve >= 20_000:
-                T = min(T * 8, 3.0)
-                no_improve = 0
-
-            # ── Correction de dérive périodique ──────────────────────────────
-            # Recalcul exact tous les 20 000 pas pour éviter accumulation d'erreurs
+                T = min(T * 8, 3.0); no_improve = 0
             if step % 20_000 == 0:
-                d = count_d(m)
+                d        = count_d(m)
                 obl_miss = count_obl_miss(m)
-                score = d * 1000 + obl_miss * 5000
+                excl_v   = count_excl_viol(plan)
+                score    = d * W_DUP + excl_v * W_EXCL + obl_miss * W_OBL
 
             r = random.randint(0, n_rounds - 1)
 
-            # ── Choix du type de mouvement ───────────────────────────────────
             if random.random() < 0.85:
-                # ── Mouvement 1 : 2-swap ──────────────────────────────────────
+                # ── 2-swap ───────────────────────────────────────────────────
                 p1, p2 = random.sample(range(n_p), 2)
                 t1, t2 = plan[r][p1], plan[r][p2]
-                if t1 == t2:
-                    continue
+                if t1 == t2: continue
+                plan[r][p1] = t2; plan[r][p2] = t1
 
-                plan[r][p1] = t2
-                plan[r][p2] = t1
-
-                if not (stag_ok(plan, r, p1, t2) and stag_ok(plan, r, p2, t1)
-                        and excl_ok(plan[r], p1, t2) and excl_ok(plan[r], p2, t1)):
-                    plan[r][p1] = t1
-                    plan[r][p2] = t2
-                    continue
+                # Anti-stagnation : hard (inchangé)
+                if not (stag_ok(plan, r, p1, t2) and stag_ok(plan, r, p2, t1)):
+                    plan[r][p1] = t1; plan[r][p2] = t2; continue
 
                 at1 = [q for q in range(n_p) if q not in (p1, p2) and plan[r][q] == t1]
                 at2 = [q for q in range(n_p) if q not in (p1, p2) and plan[r][q] == t2]
 
-                # ── Delta doublons (CORRIGÉ) ──────────────────────────────────
-                # Règle : perte d'une rencontre réduit l'excès si m >= 2
-                #          gain d'une rencontre augmente l'excès si m >= 1
-                # Bug original : pour m=3, donnait delta=0 au lieu de -1
-                delta_d = 0
-                for p3 in at1:
-                    if m[p1][p3] >= 2: delta_d -= 1   # p1 quitte t1 → perte de doublon
-                    if m[p2][p3] >= 1: delta_d += 1   # p2 rejoint t1 → nouveau doublon potentiel
-                for p3 in at2:
-                    if m[p1][p3] >= 1: delta_d += 1   # p1 rejoint t2 → nouveau doublon potentiel
-                    if m[p2][p3] >= 2: delta_d -= 1   # p2 quitte t2 → perte de doublon
-
-                # ── Delta obligations (NOUVEAU) ───────────────────────────────
-                # p1 quitte t1 (perd la rencontre avec les membres de at1 dans ce round)
-                # p1 rejoint t2 (gagne la rencontre avec les membres de at2 dans ce round)
-                # p2 fait le chemin inverse
-                delta_obl = 0
-                for p3 in at1:
-                    # p1 perd une rencontre avec p3
-                    if (min(p1, p3), max(p1, p3)) in obl_set and m[p1][p3] == 1:
-                        delta_obl += 1   # obligation perdue (seule rencontre disparaît)
-                    # p2 gagne une rencontre avec p3
-                    if (min(p2, p3), max(p2, p3)) in obl_set and m[p2][p3] == 0:
-                        delta_obl -= 1   # obligation nouvellement satisfaite
-                for p3 in at2:
-                    # p1 gagne une rencontre avec p3
-                    if (min(p1, p3), max(p1, p3)) in obl_set and m[p1][p3] == 0:
-                        delta_obl -= 1   # obligation nouvellement satisfaite
-                    # p2 perd une rencontre avec p3
-                    if (min(p2, p3), max(p2, p3)) in obl_set and m[p2][p3] == 1:
-                        delta_obl += 1   # obligation perdue
-
-                delta_score = delta_d * 1000 + delta_obl * 5000
-
-                if delta_score <= 0 or random.random() < _m.exp(-delta_score / max(T * 1000, 1e-9)):
-                    # Accepter : mise à jour incrémentale de la matrice
-                    for p3 in at1:
-                        m[p1][p3] -= 1; m[p3][p1] -= 1
-                        m[p2][p3] += 1; m[p3][p2] += 1
-                    for p3 in at2:
-                        m[p1][p3] += 1; m[p3][p1] += 1
-                        m[p2][p3] -= 1; m[p3][p2] -= 1
-                    d += delta_d
-                    obl_miss += delta_obl
-                    score = d * 1000 + obl_miss * 5000
-                    if score < best_local:
-                        best_local = score
-                        best_local_plan = [list(rr) for rr in plan]
-                        no_improve = 0
-                    else:
-                        no_improve += 1
-                else:
-                    plan[r][p1] = t1
-                    plan[r][p2] = t2
-                    no_improve += 1
-
-            else:
-                # ── Mouvement 2 : or-opt (NOUVEAU) ───────────────────────────
-                # Déplace une seule personne vers une table moins remplie.
-                # Utile quand les tables ont des tailles inégales.
-                tc_r = [0] * n_t
-                for q in range(n_p):
-                    tc_r[plan[r][q]] += 1
-
-                p1 = random.randint(0, n_p - 1)
-                t1 = plan[r][p1]
-                # Table de destination : doit avoir de la place (selon target)
-                dests = [t for t in range(n_t) if t != t1 and tc_r[t] < target[t]]
-                if not dests:
-                    continue
-                t2 = random.choice(dests)
-
-                plan[r][p1] = t2
-                if not (stag_ok(plan, r, p1, t2) and excl_ok(plan[r], p1, t2)):
-                    plan[r][p1] = t1
-                    continue
-
-                # at1 : membres restant en t1 ; at2 : membres déjà en t2
-                at1 = [q for q in range(n_p) if q != p1 and plan[r][q] == t1]
-                at2 = [q for q in range(n_p) if q != p1 and plan[r][q] == t2]
-
+                # Delta doublons
                 delta_d = 0
                 for p3 in at1:
                     if m[p1][p3] >= 2: delta_d -= 1
+                    if m[p2][p3] >= 1: delta_d += 1
                 for p3 in at2:
                     if m[p1][p3] >= 1: delta_d += 1
+                    if m[p2][p3] >= 2: delta_d -= 1
 
+                # Delta obligations
                 delta_obl = 0
                 for p3 in at1:
-                    if (min(p1, p3), max(p1, p3)) in obl_set and m[p1][p3] == 1:
-                        delta_obl += 1
+                    if (min(p1,p3),max(p1,p3)) in obl_set and m[p1][p3]==1: delta_obl+=1
+                    if (min(p2,p3),max(p2,p3)) in obl_set and m[p2][p3]==0: delta_obl-=1
                 for p3 in at2:
-                    if (min(p1, p3), max(p1, p3)) in obl_set and m[p1][p3] == 0:
-                        delta_obl -= 1
+                    if (min(p1,p3),max(p1,p3)) in obl_set and m[p1][p3]==0: delta_obl-=1
+                    if (min(p2,p3),max(p2,p3)) in obl_set and m[p2][p3]==1: delta_obl+=1
 
-                delta_score = delta_d * 1000 + delta_obl * 5000
+                # Delta exclusions (NOUVEAU — soft constraint)
+                delta_excl = 0
+                for p3 in at1:
+                    if in_same_excl(p1, p3): delta_excl -= 1  # p1 quitte t1
+                    if in_same_excl(p2, p3): delta_excl += 1  # p2 rejoint t1
+                for p3 in at2:
+                    if in_same_excl(p1, p3): delta_excl += 1  # p1 rejoint t2
+                    if in_same_excl(p2, p3): delta_excl -= 1  # p2 quitte t2
 
-                if delta_score <= 0 or random.random() < _m.exp(-delta_score / max(T * 1000, 1e-9)):
+                delta_score = delta_d * W_DUP + delta_excl * W_EXCL + delta_obl * W_OBL
+
+                if delta_score <= 0 or random.random() < _m.exp(-delta_score / max(T * W_DUP, 1e-9)):
                     for p3 in at1:
-                        m[p1][p3] -= 1; m[p3][p1] -= 1
+                        m[p1][p3]-=1; m[p3][p1]-=1; m[p2][p3]+=1; m[p3][p2]+=1
                     for p3 in at2:
-                        m[p1][p3] += 1; m[p3][p1] += 1
-                    d += delta_d
-                    obl_miss += delta_obl
-                    score = d * 1000 + obl_miss * 5000
+                        m[p1][p3]+=1; m[p3][p1]+=1; m[p2][p3]-=1; m[p3][p2]-=1
+                    d+=delta_d; obl_miss+=delta_obl; excl_v+=delta_excl
+                    score = d*W_DUP + excl_v*W_EXCL + obl_miss*W_OBL
                     if score < best_local:
-                        best_local = score
-                        best_local_plan = [list(rr) for rr in plan]
-                        no_improve = 0
-                    else:
-                        no_improve += 1
+                        best_local=score; best_local_plan=[list(rr) for rr in plan]; no_improve=0
+                    else: no_improve+=1
                 else:
-                    plan[r][p1] = t1
-                    no_improve += 1
+                    plan[r][p1]=t1; plan[r][p2]=t2; no_improve+=1
 
-            if d == 0 and obl_miss == 0:
-                break
+            else:
+                # ── Or-opt ───────────────────────────────────────────────────
+                tc_r = [0]*n_t
+                for q in range(n_p): tc_r[plan[r][q]]+=1
+                p1=random.randint(0,n_p-1); t1=plan[r][p1]
+                dests=[t for t in range(n_t) if t!=t1 and tc_r[t]<target[t]]
+                if not dests: continue
+                t2=random.choice(dests); plan[r][p1]=t2
+                if not stag_ok(plan,r,p1,t2): plan[r][p1]=t1; continue
+                at1=[q for q in range(n_p) if q!=p1 and plan[r][q]==t1]
+                at2=[q for q in range(n_p) if q!=p1 and plan[r][q]==t2]
+                delta_d=0
+                for p3 in at1:
+                    if m[p1][p3]>=2: delta_d-=1
+                for p3 in at2:
+                    if m[p1][p3]>=1: delta_d+=1
+                delta_obl=0
+                for p3 in at1:
+                    if (min(p1,p3),max(p1,p3)) in obl_set and m[p1][p3]==1: delta_obl+=1
+                for p3 in at2:
+                    if (min(p1,p3),max(p1,p3)) in obl_set and m[p1][p3]==0: delta_obl-=1
+                delta_excl=0
+                for p3 in at1:
+                    if in_same_excl(p1,p3): delta_excl-=1
+                for p3 in at2:
+                    if in_same_excl(p1,p3): delta_excl+=1
+                delta_score=delta_d*W_DUP+delta_excl*W_EXCL+delta_obl*W_OBL
+                if delta_score<=0 or random.random()<_m.exp(-delta_score/max(T*W_DUP,1e-9)):
+                    for p3 in at1: m[p1][p3]-=1; m[p3][p1]-=1
+                    for p3 in at2: m[p1][p3]+=1; m[p3][p1]+=1
+                    d+=delta_d; obl_miss+=delta_obl; excl_v+=delta_excl
+                    score=d*W_DUP+excl_v*W_EXCL+obl_miss*W_OBL
+                    if score<best_local:
+                        best_local=score; best_local_plan=[list(rr) for rr in plan]; no_improve=0
+                    else: no_improve+=1
+                else:
+                    plan[r][p1]=t1; no_improve+=1
+
+            if d==0 and excl_v==0 and obl_miss==0: break
 
         if best_local < best_score:
-            best_score = best_local
-            best_plan = best_local_plan
+            best_score=best_local; best_plan=best_local_plan
+        if best_score==0: break
 
-        if best_score == 0:
-            break
-
-    if best_plan is None:
-        return None, 0
-
+    if best_plan is None: return None, 0, 0, 0
     m_final = build_m(best_plan)
     res = [pd.DataFrame([
-        {"Participant": participants[p], "Table": best_plan[r][p] + 1, "Rotation": r + 1}
+        {"Participant": participants[p], "Table": best_plan[r][p]+1, "Rotation": r+1}
         for p in range(n_p)]) for r in range(n_rounds)]
-    return res, count_d(m_final)
+    return res, count_d(m_final), count_excl_viol(best_plan), count_obl_miss(m_final)
 
 
 # --- INTERFACE ---
@@ -644,7 +595,7 @@ else:
 if not problems:
     if st.button("🚀 Générer la solution"):
         with st.spinner("Optimisation en cours..."):
-            solution, doublons = solve_speed_business(
+            solution, doublons, excl_violations, obl_violations = solve_speed_business(
                 participants, max_per_table, n_rounds, exclusion_groups, obligation_pairs)
         if solution:
             st.session_state['solution']       = solution
@@ -669,15 +620,18 @@ if not problems:
         table_size       = len(participants) / n_t
 
         if True:
-            col_a, col_b, col_c = st.columns(3)
+            col_a, col_b, col_c, col_d = st.columns(4)
             with col_a:
-                st.metric("Doublons", doublons)
+                st.metric("Doublons", doublons, delta="✅ Optimal" if doublons==0 else None)
             with col_b:
+                st.metric("Violations exclusion", excl_violations,
+                          delta="✅" if excl_violations==0 else f"⚠️ {excl_violations}")
+            with col_c:
                 total_m = int(table_size * (table_size - 1) / 2 * n_t * n_rounds)
                 total_p = n_p * (n_p - 1) // 2
                 pct = min(100, round(total_m / total_p * 100))
-                st.metric("Couverture théorique max", f"{pct}%")
-            with col_c:
+                st.metric("Couverture max", f"{pct}%")
+            with col_d:
                 score = max(0, min(100, 100 - doublons * 2))
                 st.metric("Score de mixage", f"{score}%")
 
@@ -703,13 +657,20 @@ if not problems:
                     obl_non_respectees.append(f"{a} & {b}")
 
             if doublons == 0:
-                st.success("✅ Solution optimale — aucun doublon !")
+                st.success("✅ 0 doublon — priorité absolue respectée.")
             else:
                 zero_possible = table_size <= n_t
-                st.warning(
-                    f"⚠️ {doublons} doublon(s). "
-                    f"{'Inévitables pour ce scénario.' if not zero_possible else 'Essayez de relancer.'}"
+                st.error(
+                    f"❌ {doublons} doublon(s). "
+                    f"{'Inévitables mathématiquement pour ce scénario.' if not zero_possible else 'Relancez pour tenter mieux.'}"
                 )
+            if excl_violations > 0:
+                st.warning(
+                    f"⚠️ {excl_violations} violation(s) d'exclusion : l'algo a préféré respecter "
+                    f"la règle des 0 doublons. Relancez pour tenter de réduire ce chiffre."
+                )
+            elif exclusion_groups:
+                st.success("✅ Toutes les exclusions sont respectées.")
 
             if obl_non_respectees:
                 st.warning(
