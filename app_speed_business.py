@@ -7,75 +7,14 @@ import json as _json
 from collections import defaultdict
 
 
-# --- GÉNÉRATION PAGE WEB ---
-def generate_lookup_html(solution, participants, n_rounds, event_name="Speed Business"):
-    data = {}
-    for name in participants:
-        tables = []
-        for r in range(n_rounds):
-            df = solution[r]
-            row = df[df["Participant"] == name]
-            tables.append(int(row["Table"].values[0]) if len(row) > 0 else 0)
-        data[name] = tables
+# --- GÉNÉRATION PAGE WEB (3 blocs Webflow + page complète) ---
+LOGO_URL   = "https://cdn.prod.website-files.com/6638a4188051fb2366951b27/6720e8e5e3c84be2401830de_logo.svg"
+REVIEW_URL = "https://g.page/r/CYk5Jtzqw0HHEAE/review"
 
-    data_js   = _json.dumps(data, ensure_ascii=True)
-    rounds_js = _json.dumps(list(range(1, n_rounds + 1)))
 
-    js_lines = [
-        "var DATA=" + data_js + ";",
-        "var ROUNDS=" + rounds_js + ";",
-        "var names=Object.keys(DATA);",
-        "function doSearch(){",
-        "  var q=document.getElementById('inp').value.trim().toLowerCase();",
-        "  var res=document.getElementById('res');",
-        "  var det=document.getElementById('det');",
-        "  det.style.display='none';",
-        "  if(!q){res.innerHTML='<p class=\"hint\">Tapez votre pr\u00e9nom ou votre nom</p>';return;}",
-        "  var found=[];",
-        "  for(var i=0;i<names.length;i++){",
-        "    var words=q.split(' ');",
-        "    for(var w=0;w<words.length;w++){",
-        "      if(words[w]&&names[i].toLowerCase().indexOf(words[w])>=0){found.push(names[i]);break;}",
-        "    }",
-        "  }",
-        "  if(!found.length){res.innerHTML='<p class=\"no-result\">Aucun r\u00e9sultat &mdash; v\u00e9rifiez l\u2019orthographe</p>';return;}",
-        "  if(found.length===1){showDetail(found[0]);return;}",
-        "  var html='';",
-        "  for(var j=0;j<found.length;j++){",
-        "    var safe=found[j].replace(/&/g,'&amp;').replace(/\"/g,'&quot;');",
-        "    html+='<div class=\"result-item\" data-n=\"'+safe+'\" onclick=\"showDetail(this.dataset.n)\">'",
-        "         +'<span>'+found[j]+'</span><span class=\"arr\">&rsaquo;</span></div>';",
-        "  }",
-        "  res.innerHTML=html;",
-        "}",
-        "function showDetail(name){",
-        "  document.getElementById('res').innerHTML='';",
-        "  var tables=DATA[name];if(!tables)return;",
-        "  var cards='';",
-        "  for(var i=0;i<ROUNDS.length;i++){",
-        "    cards+='<div class=\"card\"><div class=\"cl\"><span class=\"lbl\">Rotation</span>'",
-        "          +'<span class=\"rnum\">'+ROUNDS[i]+'</span></div>'",
-        "          +'<div class=\"ct\"><span class=\"lbl gold\">Table</span>'",
-        "          +'<span class=\"tnum\">'+tables[i]+'</span></div></div>';",
-        "  }",
-        "  var det=document.getElementById('det');",
-        "  det.innerHTML='<div class=\"dh\"><button class=\"back\" onclick=\"goBack()\">&larr;</button>'",
-        "               +'<h2 class=\"dname\">'+name+'</h2></div><div class=\"cards\">'+cards+'</div>';",
-        "  det.style.display='block';window.scrollTo(0,0);",
-        "}",
-        "function goBack(){",
-        "  document.getElementById('det').style.display='none';",
-        "  document.getElementById('res').innerHTML='';",
-        "  document.getElementById('inp').value='';",
-        "  document.getElementById('inp').focus();",
-        "}",
-        "document.getElementById('inp').addEventListener('input',function(){doSearch();});",
-        "document.getElementById('inp').addEventListener('keyup',function(e){if(e.key==='Enter')doSearch();});",
-        "document.getElementById('res').innerHTML='<p class=\"hint\">Tapez votre pr\u00e9nom ou votre nom</p>';",
-    ]
-    js = "\n".join(js_lines)
-
-    css = "\n".join([
+def _lookup_css():
+    """Bloc 1 — CSS (Head Code Webflow). Ne change jamais."""
+    return "\n".join([
         "*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}",
         ":root{--bg:#0a0a0f;--surf:#13131a;--card:#1c1c26;--bord:#2a2a3a;--gold:#cb1d23;--goldd:#9e1519;--txt:#f0eee8;--mut:#7a7a8a;--r:16px}",
         "body{background:var(--bg);color:var(--txt);font-family:Georgia,'Times New Roman',serif;min-height:100vh;padding-bottom:60px}",
@@ -113,38 +52,130 @@ def generate_lookup_html(solution, participants, n_rounds, event_name="Speed Bus
         ".foot{text-align:center;padding:40px 20px 0;color:var(--mut);font-size:12px;font-style:italic}",
     ])
 
+
+def _lookup_body(event_name, n_rounds):
+    """Bloc 2 — HTML (Embed Webflow). Ne change jamais : le titre et le nombre
+    de rotations sont mis à jour par le JS (ids ev-ttl / ev-sub)."""
+    return "\n".join([
+        "<header class='hdr'>",
+        "  <img src='" + LOGO_URL + "'",
+        "       alt='Ensenat Coaching' style='height:56px;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto'>",
+        "  <p class='eye'>Planning de tables</p>",
+        "  <h1 class='ttl' id='ev-ttl'>" + event_name + "</h1>",
+        "  <p class='sub' id='ev-sub'>" + str(n_rounds) + " rotations &middot; Trouvez votre nom</p>",
+        "</header>",
+        "<div class='wrap'>",
+        "  <label class='lbl-s' for='inp'>Recherchez votre nom</label>",
+        "  <div class='row'>",
+        "    <input type='text' id='inp' placeholder='Ex : Marie ou Dupont…' autocomplete='off' spellcheck='false'>",
+        "    <button id='btn' onclick='doSearch()'>Rechercher</button>",
+        "  </div>",
+        "</div>",
+        "<div id='res'></div>",
+        "<div id='det'></div>",
+        "<p class='foot' style='font-size:15px;'><a href='" + REVIEW_URL + "' target='_blank' style='color:var(--mut);text-decoration:underline;'>Laissez nous un avis</a></p>",
+    ])
+
+
+def _lookup_js(solution, participants, n_rounds, event_name):
+    """Bloc 3 — JS + données (Before </body> Webflow). Change à chaque événement."""
+    data = {}
+    for name in participants:
+        tables = []
+        for r in range(n_rounds):
+            df = solution[r]
+            row = df[df["Participant"] == name]
+            tables.append(int(row["Table"].values[0]) if len(row) > 0 else 0)
+        data[name] = tables
+
+    data_js   = _json.dumps(data, ensure_ascii=True, separators=(',', ':'))
+    rounds_js = _json.dumps(list(range(1, n_rounds + 1)), separators=(',', ':'))
+    event_js  = _json.dumps(event_name, ensure_ascii=True)
+
+    js_lines = [
+        "var EVENT=" + event_js + ";",
+        "var DATA=" + data_js + ";",
+        "var ROUNDS=" + rounds_js + ";",
+        "var names=Object.keys(DATA);",
+        "(function(){",
+        "  var t=document.getElementById('ev-ttl');if(t)t.textContent=EVENT;",
+        "  var s=document.getElementById('ev-sub');if(s)s.textContent=ROUNDS.length+' rotations · Trouvez votre nom';",
+        "})();",
+        "function doSearch(){",
+        "  var q=document.getElementById('inp').value.trim().toLowerCase();",
+        "  var res=document.getElementById('res');",
+        "  var det=document.getElementById('det');",
+        "  det.style.display='none';",
+        "  if(!q){res.innerHTML='<p class=\"hint\">Tapez votre prénom ou votre nom</p>';return;}",
+        "  var found=[];",
+        "  for(var i=0;i<names.length;i++){",
+        "    var words=q.split(' ');",
+        "    for(var w=0;w<words.length;w++){",
+        "      if(words[w]&&names[i].toLowerCase().indexOf(words[w])>=0){found.push(names[i]);break;}",
+        "    }",
+        "  }",
+        "  if(!found.length){res.innerHTML='<p class=\"no-result\">Aucun résultat &mdash; vérifiez l’orthographe</p>';return;}",
+        "  if(found.length===1){showDetail(found[0]);return;}",
+        "  var html='';",
+        "  for(var j=0;j<found.length;j++){",
+        "    var safe=found[j].replace(/&/g,'&amp;').replace(/\"/g,'&quot;');",
+        "    html+='<div class=\"result-item\" data-n=\"'+safe+'\" onclick=\"showDetail(this.dataset.n)\">'",
+        "         +'<span>'+found[j]+'</span><span class=\"arr\">&rsaquo;</span></div>';",
+        "  }",
+        "  res.innerHTML=html;",
+        "}",
+        "function showDetail(name){",
+        "  document.getElementById('res').innerHTML='';",
+        "  var tables=DATA[name];if(!tables)return;",
+        "  var cards='';",
+        "  for(var i=0;i<ROUNDS.length;i++){",
+        "    cards+='<div class=\"card\"><div class=\"cl\"><span class=\"lbl\">Rotation</span>'",
+        "          +'<span class=\"rnum\">'+ROUNDS[i]+'</span></div>'",
+        "          +'<div class=\"ct\"><span class=\"lbl gold\">Table</span>'",
+        "          +'<span class=\"tnum\">'+tables[i]+'</span></div></div>';",
+        "  }",
+        "  var det=document.getElementById('det');",
+        "  det.innerHTML='<div class=\"dh\"><button class=\"back\" onclick=\"goBack()\">&larr;</button>'",
+        "               +'<h2 class=\"dname\">'+name+'</h2></div><div class=\"cards\">'+cards+'</div>';",
+        "  det.style.display='block';window.scrollTo(0,0);",
+        "}",
+        "function goBack(){",
+        "  document.getElementById('det').style.display='none';",
+        "  document.getElementById('res').innerHTML='';",
+        "  document.getElementById('inp').value='';",
+        "  document.getElementById('inp').focus();",
+        "}",
+        "document.getElementById('inp').addEventListener('input',function(){doSearch();});",
+        "document.getElementById('inp').addEventListener('keyup',function(e){if(e.key==='Enter')doSearch();});",
+        "document.getElementById('res').innerHTML='<p class=\"hint\">Tapez votre prénom ou votre nom</p>';",
+    ]
+    return "\n".join(js_lines)
+
+
+def generate_webflow_blocks(solution, participants, n_rounds, event_name="Speed Business"):
+    """Les 3 blocs prêts à coller dans Webflow (Paramètres de la page → Custom code)."""
+    return {
+        "head":   "<style>\n" + _lookup_css() + "\n</style>",
+        "embed":  _lookup_body(event_name, n_rounds),
+        "footer": "<script>\n" + _lookup_js(solution, participants, n_rounds, event_name) + "\n</script>",
+    }
+
+
+def generate_lookup_html(solution, participants, n_rounds, event_name="Speed Business"):
+    """Page complète autonome (index.html) = les 3 blocs assemblés."""
+    b = generate_webflow_blocks(solution, participants, n_rounds, event_name)
     parts = [
         "<!DOCTYPE html>",
         "<html lang='fr'>",
         "<head>",
         "<meta charset='UTF-8'>",
         "<meta name='viewport' content='width=device-width,initial-scale=1.0,maximum-scale=1.0'>",
-        "<title>" + event_name + " \u2014 Mes tables</title>",
-        "<style>",
-        css,
-        "</style>",
+        "<title>" + event_name + " — Mes tables</title>",
+        b["head"],
         "</head>",
         "<body>",
-        "<header class='hdr'>",
-        "  <img src='https://cdn.prod.website-files.com/6638a4188051fb2366951b27/6720e8e5e3c84be2401830de_logo.svg'",
-        "       alt='Ensenat Coaching' style='height:56px;margin-bottom:20px;display:block;margin-left:auto;margin-right:auto'>",
-        "  <p class='eye'>Planning de tables</p>",
-        "  <h1 class='ttl'>" + event_name + "</h1>",
-        "  <p class='sub'>" + str(n_rounds) + " rotations &middot; Trouvez votre nom</p>",
-        "</header>",
-        "<div class='wrap'>",
-        "  <label class='lbl-s' for='inp'>Recherchez votre nom</label>",
-        "  <div class='row'>",
-        "    <input type='text' id='inp' placeholder='Ex\u00a0: Marie ou Dupont\u2026' autocomplete='off' spellcheck='false'>",
-        "    <button id='btn' onclick='doSearch()'>Rechercher</button>",
-        "  </div>",
-        "</div>",
-        "<div id='res'></div>",
-        "<div id='det'></div>",
-        "<p class='foot'>Speed Business Optimizer</p>",
-        "<script>",
-        js,
-        "</script>",
+        b["embed"],
+        b["footer"],
         "</body>",
         "</html>",
     ]
@@ -632,7 +663,8 @@ if not problems:
                           delta="✅" if excl_violations==0 else f"⚠️ {excl_violations}")
             with col_c:
                 total_m = int(table_size * (table_size - 1) / 2 * n_t * n_rounds)
-                total_p = n_p * (n_p - 1) // 2
+                n_p_s = len(participants)
+                total_p = n_p_s * (n_p_s - 1) // 2
                 pct = min(100, round(total_m / total_p * 100))
                 st.metric("Couverture max", f"{pct}%")
             with col_d:
@@ -695,10 +727,57 @@ if not problems:
             with col_dl2:
                 html_content = generate_lookup_html(solution, participants, n_rounds, event_name)
                 st.download_button("🌐 Page web (QR code)", html_content.encode("utf-8"), "index.html", "text/html", use_container_width=True)
-            st.info(
-                "💡 **Page web** : ouvrez le fichier `index.html` téléchargé directement dans votre navigateur, "
-                "ou déposez-le sur **netlify.com/drop** pour obtenir une URL + QR code."
+            st.caption(
+                "💡 `index.html` = aperçu local (double-clic pour l'ouvrir dans le navigateur). "
+                "Pour la mise en ligne, utilisez les blocs Webflow ci-dessous."
             )
+
+            # ── Intégration Webflow : 3 blocs prêts à coller ──────────────────
+            st.markdown("---")
+            st.markdown("### 🔷 Intégration Webflow")
+            blocks = generate_webflow_blocks(solution, participants, n_rounds, event_name)
+            st.caption(
+                "Webflow → page **speed-business** → ⚙️ Paramètres de la page → *Custom code*. "
+                "Les blocs **1** et **2** sont à coller **une seule fois** (ils ne changent jamais). "
+                "Le bloc **3** est **à remplacer à chaque événement**, puis **Publier**. "
+                "Survolez un bloc → icône 📋 en haut à droite pour tout copier."
+            )
+
+            def _code(txt, lang):
+                try:
+                    st.code(txt, language=lang, wrap_lines=True)
+                except TypeError:  # anciennes versions de Streamlit
+                    st.code(txt, language=lang)
+
+            with st.expander(f"1️⃣ Head Code — CSS · {len(blocks['head']):,} car. · une seule fois"):
+                _code(blocks["head"], "html")
+            with st.expander(f"2️⃣ Embed — HTML · {len(blocks['embed']):,} car. · une seule fois"):
+                _code(blocks["embed"], "html")
+            with st.expander(
+                f"3️⃣ Before `</body>` — JS + données · {len(blocks['footer']):,} car. · À CHAQUE ÉVÉNEMENT",
+                expanded=True,
+            ):
+                if len(blocks["footer"]) > 50_000:
+                    st.error(
+                        f"❌ {len(blocks['footer']):,} caractères : au-delà de la limite Webflow (50 000). "
+                        "Réduisez le nombre de participants ou raccourcissez les noms."
+                    )
+                _code(blocks["footer"], "html")
+
+            webflow_txt = "\n\n".join([
+                "===== 1) HEAD CODE (CSS) — une seule fois =====",
+                blocks["head"],
+                "===== 2) EMBED (HTML) — une seule fois =====",
+                blocks["embed"],
+                "===== 3) BEFORE </body> (JS + données) — à chaque événement =====",
+                blocks["footer"],
+            ])
+            st.download_button(
+                "📄 Télécharger les 3 blocs Webflow (.txt)",
+                webflow_txt.encode("utf-8"),
+                "webflow_blocs.txt", "text/plain",
+            )
+
             st.markdown("---")
             tabs = st.tabs([f"Rotation {i + 1}" for i in range(n_rounds)])
             for i, tab in enumerate(tabs):
